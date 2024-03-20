@@ -4,8 +4,9 @@
 #include <math.h>
 #include <float.h>
 #include <stdint.h>
+#include <mpi.h>
 
-#define MAX_LINE_LENGTH 1000000
+#define MAX_LINE_LENGTH (4097 * 3 + 4096)
 #define NUM_ROWS 360
 #define NUM_COLS 4096
 #define PATCH_SIZE 3 /* Patch size for neighborhood */
@@ -151,10 +152,12 @@ int matchImage(double* images, double* refImage){
     return index;
 }
 
-int main() {
+int main(int argc, char *argv[]) {
     srand(123);
-    FILE *file;
-    char line[MAX_LINE_LENGTH];
+    int myrank, numranks;
+    MPI_File file;
+    MPI_Status status;
+    char line[MAX_LINE_LENGTH + 2];
     char *token;
     double* train_images = calloc(NUM_ROWS * NUM_COLS, sizeof(double));
     double* test_images = calloc(40 * NUM_COLS, sizeof(double));
@@ -163,144 +166,166 @@ int main() {
     int* train_labels = calloc(NUM_ROWS, sizeof(int));
     int* test_labels = calloc(40, sizeof(int));
     int field_count;
+    int i,j;
+
+
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+    MPI_Comm_size(MPI_COMM_WORLD, &numranks);
+
+    int rows_per_rank = NUM_ROWS / numranks;
+    int start_row = myrank * rows_per_rank;
+    int end_row = (myrank + 1) * rows_per_rank;
+
+
+    // +2 to handle the \r\n
+    MPI_Offset offset = start_row * (MAX_LINE_LENGTH + 2);
 
     // Open the CSV file for reading
-    file = fopen("faces_train.csv", "r");
+    MPI_File_open(MPI_COMM_WORLD, "faces_train.csv", MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
     if (file == NULL) {
         perror("Error opening file");
+        MPI_Finalize();
         return 1;
     }
 //----------------------------------------------------------------------------------------------
-    // Read each line of the file
-    int image_num = 0;
-    while (fgets(line, MAX_LINE_LENGTH, file) != NULL) {
-        // Remove newline character if present
-        if (line[strlen(line) - 1] == '\n') {
-            line[strlen(line) - 1] = '\0';
-        }
 
-        // Split the line into fields based on comma delimiter
-        token = strtok(line, ",");
-        field_count = 0;
-        train_labels[image_num] = atoi(token);
-        token = strtok(NULL, ",");
-        while (token != NULL) {
-            org_images[image_num * NUM_COLS + field_count] = strtod(token, NULL);
-            train_images[image_num * NUM_COLS + field_count] = strtod(token, NULL);
-            token = strtok(NULL, ",");
+    for (i = 0; i < rows_per_rank; i++) {
+        MPI_File_seek(file, offset + i * (MAX_LINE_LENGTH + 2), MPI_SEEK_SET);
+        MPI_File_read(file, line, (MAX_LINE_LENGTH + 2), MPI_CHAR, &status);
+        line[MAX_LINE_LENGTH + 2] = '\0'; // Null-terminate the string
+        // Parse the read data
+        char* ptr = strtok(line, ",");
+        if (ptr == NULL) {
+            fprintf(stderr, "i value: %d\n", i);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+        train_labels[i] = atoi(ptr);
+        if(myrank == 0){printf("train Label: %d\n",train_labels[i] );}
+        int count = 0;
+        ptr = strtok(NULL, ",");
+        int field_count = 0;
+        while (ptr != NULL) {
+            org_images[i * NUM_COLS + field_count] = strtod(ptr, NULL);
+            train_images[i * NUM_COLS + field_count] = strtod(ptr, NULL);
+            ptr = strtok(NULL, ",");
             field_count++;
         }
-
-        normalize(train_images, image_num * NUM_COLS);
-
-        image_num++;
+        // if(myrank == 0){printf("Count: %d\n", field_count);}
+        // Normalize the data
+        normalize(train_images, i * NUM_COLS);
     }
+
     // Close the file
-    fclose(file);
+    MPI_File_close(&file);
 
-    colMeans(train_images, means);
+    // Synchronize all ranks before finalizing MPI
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Finalize();
 
-
-//----------------------------------------------------------------------------------------------
-    // Open the CSV file for reading
-    file = fopen("faces_test.csv", "r");
-    if (file == NULL) {
-        perror("Error opening file");
-        return 1;
-    }
-
-    // Read each line of the file
-    image_num = 0;
-    while (fgets(line, MAX_LINE_LENGTH, file) != NULL) {
-        // Remove newline character if present
-        if (line[strlen(line) - 1] == '\n') {
-            line[strlen(line) - 1] = '\0';
-        }
-
-        // Split the line into fields based on comma delimiter
-        token = strtok(line, ",");
-        field_count = 0;
-        test_labels[image_num] = atoi(token);
-        token = strtok(NULL, ",");
-        while (token != NULL) {
-            test_images[image_num * NUM_COLS + field_count] = strtod(token, NULL);
-            token = strtok(NULL, ",");
-            field_count++;
-        }
-
-        normalize(test_images, image_num * NUM_COLS);
-
-        image_num++;
-    }
-    // Close the file
-    fclose(file);
-    int i;
-    int j;
-    for(j=0; j < NUM_COLS; j++){
-        for(i = 0; i < 40; i++){
-            test_images[i * NUM_COLS + j] = test_images[i * NUM_COLS + j] - means[j];
-        }
-    }
-//----------------------------------------------------------------------------------------------
-    int correctCount = 0;
-    for(i = 0; i < 40; i++){
-        double* ref_image = calloc(NUM_COLS, sizeof(double));
-        for(j = i * NUM_COLS; j < i * NUM_COLS + NUM_COLS; j++){
-            ref_image[j - (i * NUM_COLS)] = test_images[j];
-        }
-        int index = matchImage(train_images, ref_image);
-        if(train_labels[index] == test_labels[i]){
-            correctCount++;
-        }
-        free(ref_image);
-    }
-
-    printf("Success Rate: %lf%%\n", 100 * (double) correctCount/40);
-
-    FILE* pyFile = fopen("output.txt", "w");
-    if (pyFile == NULL) {
-        perror("Error opening file");
-        return 1;
-    }
-    correctCount = 0;
-    int index = 0;
-    for(j = 0; j < 40; j++){
-        int* occlusion_mask = calloc(NUM_COLS, sizeof(int));
-        for(i =0; i < NUM_COLS; i++){
-            occlusion_mask[i] = rand() % 2;
-        }
-        double* occluded_image = calloc(NUM_COLS, sizeof(double));
-        for(i = 0; i < NUM_COLS; i++){
-            occluded_image[i] = test_images[j * NUM_COLS + i];
-        }
-        recover_occluded(occluded_image, occlusion_mask);
-
-        index = matchImage(train_images, occluded_image);
-        if(train_labels[index] == test_labels[j]){
-            correctCount++;
-        }
-        free(occlusion_mask);
-        free(occluded_image);
-    }
+//     colMeans(train_images, means);
 
 
-    printf("Success Rate Occlusion: %lf%%\n", 100 * (double) correctCount/40);
+// //----------------------------------------------------------------------------------------------
+//     // Open the CSV file for reading
+//     file = fopen("faces_test.csv", "r");
+//     if (file == NULL) {
+//         perror("Error opening file");
+//         return 1;
+//     }
 
-    // Write each double to the file
-    for(j = 0; j < NUM_COLS; j++){
-        fprintf(pyFile, "%lf\n", org_images[index * NUM_COLS + j]);
-    }
+//     // Read each line of the file
+//     image_num = 0;
+//     while (fgets(line, MAX_LINE_LENGTH, file) != NULL) {
+//         // Remove newline character if present
+//         if (line[strlen(line) - 1] == '\n') {
+//             line[strlen(line) - 1] = '\0';
+//         }
 
-    fclose(pyFile);
+//         // Split the line into fields based on comma delimiter
+//         token = strtok(line, ",");
+//         field_count = 0;
+//         test_labels[image_num] = atoi(token);
+//         token = strtok(NULL, ",");
+//         while (token != NULL) {
+//             test_images[image_num * NUM_COLS + field_count] = strtod(token, NULL);
+//             token = strtok(NULL, ",");
+//             field_count++;
+//         }
 
-    system("python3 display.py");
+//         normalize(test_images, image_num * NUM_COLS);
 
-    free(train_images);
-    free(test_images);
-    free(org_images);
-    free(means);
-    free(train_labels);
-    free(test_labels);
+//         image_num++;
+//     }
+//     // Close the file
+//     fclose(file);
+//     int i;
+//     int j;
+//     for(j=0; j < NUM_COLS; j++){
+//         for(i = 0; i < 40; i++){
+//             test_images[i * NUM_COLS + j] = test_images[i * NUM_COLS + j] - means[j];
+//         }
+//     }
+// //----------------------------------------------------------------------------------------------
+//     int correctCount = 0;
+//     for(i = 0; i < 40; i++){
+//         double* ref_image = calloc(NUM_COLS, sizeof(double));
+//         for(j = i * NUM_COLS; j < i * NUM_COLS + NUM_COLS; j++){
+//             ref_image[j - (i * NUM_COLS)] = test_images[j];
+//         }
+//         int index = matchImage(train_images, ref_image);
+//         if(train_labels[index] == test_labels[i]){
+//             correctCount++;
+//         }
+//         free(ref_image);
+//     }
 
-    return 0;
+//     printf("Success Rate: %lf%%\n", 100 * (double) correctCount/40);
+
+//     FILE* pyFile = fopen("output.txt", "w");
+//     if (pyFile == NULL) {
+//         perror("Error opening file");
+//         return 1;
+//     }
+//     correctCount = 0;
+//     int index = 0;
+//     for(j = 0; j < 40; j++){
+//         int* occlusion_mask = calloc(NUM_COLS, sizeof(int));
+//         for(i =0; i < NUM_COLS; i++){
+//             occlusion_mask[i] = rand() % 2;
+//         }
+//         double* occluded_image = calloc(NUM_COLS, sizeof(double));
+//         for(i = 0; i < NUM_COLS; i++){
+//             occluded_image[i] = test_images[j * NUM_COLS + i];
+//         }
+//         recover_occluded(occluded_image, occlusion_mask);
+
+//         index = matchImage(train_images, occluded_image);
+//         if(train_labels[index] == test_labels[j]){
+//             correctCount++;
+//         }
+//         free(occlusion_mask);
+//         free(occluded_image);
+//     }
+
+
+//     printf("Success Rate Occlusion: %lf%%\n", 100 * (double) correctCount/40);
+
+//     // Write each double to the file
+//     for(j = 0; j < NUM_COLS; j++){
+//         fprintf(pyFile, "%lf\n", org_images[index * NUM_COLS + j]);
+//     }
+
+//     fclose(pyFile);
+
+//     system("python3 display.py");
+
+//     free(train_images);
+//     free(test_images);
+//     free(org_images);
+//     free(means);
+//     free(train_labels);
+//     free(test_labels);
+
+//     return 0;
 }
