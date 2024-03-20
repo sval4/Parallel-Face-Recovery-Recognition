@@ -114,16 +114,18 @@ void normalize(double* row, int start){
     
 }
 
-void colMeans(double* images, double* means){
-    int i,j;
-    for(j = 0; j < NUM_COLS; j++){
-        double avg = 0;
-        for(i = 0; i < NUM_ROWS; i++){
-            avg += images[i * NUM_COLS + j] / NUM_ROWS;
+void colMeans(double* images, double* means, int rows_per_rank){
+    int i, j;
+    double local_sum[NUM_COLS] = {0};
+
+    for (j = 0; j < NUM_COLS; j++) {
+        for (i = 0; i < rows_per_rank; i++) {
+            local_sum[j] += images[i * NUM_COLS + j];
         }
-        means[j] = avg;
-        for(i = 0; i < NUM_ROWS; i++){
-            images[i * NUM_COLS + j] =  images[i * NUM_COLS + j] - avg;
+        MPI_Allreduce(MPI_IN_PLACE, &local_sum[j], 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        means[j] = local_sum[j] / NUM_ROWS;
+        for (i = 0; i < rows_per_rank; i++) {
+            images[i * NUM_COLS + j] -= means[j];
         }
     }
 }
@@ -138,16 +140,22 @@ double norm2(double* images, int start, double* refImage){
 
 }
 
-int matchImage(double* images, double* refImage){
+int matchImage(double* images, double* refImage, int rows_per_rank){
     int i;
     double minDist = DBL_MAX;
     int index = 0;
-    for(i = 0; i < NUM_ROWS; i++){
+    for(i = 0; i < rows_per_rank; i++){
         double dist = norm2(images, i * NUM_COLS, refImage);
         if(minDist > dist){
             minDist = dist;
             index = i;
         }
+    }
+    double global_minDist;
+    MPI_Allreduce(&minDist, &global_minDist, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+    // if(myrank == 0){printf("GlobMinDist:%lf\n", global_minDist);}
+    if (minDist > global_minDist) {
+        index = -1;
     }
     return index;
 }
@@ -175,14 +183,11 @@ int main(int argc, char *argv[]) {
 
     int rows_per_rank = NUM_ROWS / numranks;
     int start_row = myrank * rows_per_rank;
-    int end_row = (myrank + 1) * rows_per_rank;
 
-
-    // +2 to handle the \r\n
+    // +2 to handle the \r\n at end of each line
     MPI_Offset offset = start_row * (MAX_LINE_LENGTH + 2);
 
-    // Open the CSV file for reading
-    MPI_File_open(MPI_COMM_WORLD, "faces_train.csv", MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
+    MPI_File_open(MPI_COMM_WORLD, "faces_train360.csv", MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
     if (file == NULL) {
         perror("Error opening file");
         MPI_Finalize();
@@ -194,138 +199,143 @@ int main(int argc, char *argv[]) {
         MPI_File_seek(file, offset + i * (MAX_LINE_LENGTH + 2), MPI_SEEK_SET);
         MPI_File_read(file, line, (MAX_LINE_LENGTH + 2), MPI_CHAR, &status);
         line[MAX_LINE_LENGTH + 2] = '\0'; // Null-terminate the string
-        // Parse the read data
-        char* ptr = strtok(line, ",");
-        if (ptr == NULL) {
-            fprintf(stderr, "i value: %d\n", i);
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-        train_labels[i] = atoi(ptr);
-        if(myrank == 0){printf("train Label: %d\n",train_labels[i] );}
+        char* token = strtok(line, ",");
+        train_labels[i] = atoi(token);
+        // if(myrank == 0){printf("train Label: %d\n",train_labels[i] );}
         int count = 0;
-        ptr = strtok(NULL, ",");
+        token = strtok(NULL, ",");
         int field_count = 0;
-        while (ptr != NULL) {
-            org_images[i * NUM_COLS + field_count] = strtod(ptr, NULL);
-            train_images[i * NUM_COLS + field_count] = strtod(ptr, NULL);
-            ptr = strtok(NULL, ",");
+        while (token != NULL) {
+            org_images[i * NUM_COLS + field_count] = strtod(token, NULL);
+            train_images[i * NUM_COLS + field_count] = strtod(token, NULL);
+            token = strtok(NULL, ",");
             field_count++;
         }
         // if(myrank == 0){printf("Count: %d\n", field_count);}
-        // Normalize the data
         normalize(train_images, i * NUM_COLS);
     }
 
-    // Close the file
+
     MPI_File_close(&file);
 
-    // Synchronize all ranks before finalizing MPI
-    MPI_Barrier(MPI_COMM_WORLD);
+    colMeans(train_images, means, rows_per_rank);
+    if(myrank == 1){
+        // for(i = 0; i < NUM_COLS; i++){
+        //     printf("Mean[%d]: %lf\n",i, means[i]);
+        // }
+    }
+
+
+
+// //----------------------------------------------------------------------------------------------
+
+    int test_rows_per_rank = 40 / numranks;
+    int test_start_row = myrank * test_rows_per_rank;
+
+    // +2 to handle the \r\n
+    offset = test_start_row * (MAX_LINE_LENGTH + 2);
+
+    MPI_File_open(MPI_COMM_WORLD, "faces_test.csv", MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
+    if (file == NULL) {
+        perror("Error opening file");
+        MPI_Finalize();
+        return 1;
+    }
+    for (i = test_start_row; i < test_rows_per_rank + test_start_row; i++) {
+        MPI_File_seek(file, offset + (i - test_start_row) * (MAX_LINE_LENGTH + 2), MPI_SEEK_SET);
+        MPI_File_read(file, line, (MAX_LINE_LENGTH + 2), MPI_CHAR, &status);
+        line[MAX_LINE_LENGTH + 2] = '\0'; // Null-terminate the string
+        char* token = strtok(line, ",");
+        test_labels[i] = atoi(token);
+        // if(myrank == 1){printf("test Label: %d\n",test_labels[i]);}
+        int count = 0;
+        token = strtok(NULL, ",");
+        int field_count = 0;
+        while (token != NULL) {
+            test_images[i * NUM_COLS + field_count] = strtod(token, NULL);
+            token = strtok(NULL, ",");
+            field_count++;
+        }
+        // if(myrank == 0){printf("Count: %d\n", field_count);}
+        normalize(test_images, i * NUM_COLS);
+    }
+    MPI_File_close(&file);
+    for(j=0; j < NUM_COLS; j++){
+        for(i = test_start_row; i < test_start_row + test_rows_per_rank; i++){
+            test_images[i * NUM_COLS + j] = test_images[i * NUM_COLS + j] - means[j];
+        }
+    }
+    MPI_Allgather(test_images + (test_start_row * NUM_COLS), test_rows_per_rank * NUM_COLS, MPI_DOUBLE, test_images, test_rows_per_rank * NUM_COLS, MPI_DOUBLE, MPI_COMM_WORLD);
+    MPI_Allgather(test_labels + test_start_row, test_rows_per_rank, MPI_INT, test_labels, test_rows_per_rank, MPI_INT, MPI_COMM_WORLD);
+
+//----------------------------------------------------------------------------------------------
+    int correctCount = 0;
+    for(i = 0; i < 40; i++){
+        double* ref_image = calloc(NUM_COLS, sizeof(double));
+        for(j = i * NUM_COLS; j < i * NUM_COLS + NUM_COLS; j++){
+            ref_image[j - (i * NUM_COLS)] = test_images[j];
+        }
+        int index = matchImage(train_images, ref_image, rows_per_rank);
+        if(index != -1 && train_labels[index] == test_labels[i]){
+            correctCount++;
+        }
+        free(ref_image);
+    }
+    int global_correctCount;
+    MPI_Reduce(&correctCount, &global_correctCount, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    if(myrank == 0){printf("Success Rate: %lf%%\n", 100 * (double) global_correctCount/40);}
+
+    FILE* pyFile = fopen("output.txt", "w");
+    if (pyFile == NULL) {
+        perror("Error opening file");
+        return 1;
+    }
+    correctCount = 0;
+    int index = 0;
+    for(j = 0; j < 40; j++){
+        int* occlusion_mask = calloc(NUM_COLS, sizeof(int));
+        double* occluded_image = calloc(NUM_COLS, sizeof(double));
+        if(myrank == 0){
+            for(i = 0; i < NUM_COLS; i++){
+                occlusion_mask[i] = rand() % 2;
+            }
+            for(i = 0; i < NUM_COLS; i++){
+                occluded_image[i] = test_images[j * NUM_COLS + i];
+            }
+            recover_occluded(occluded_image, occlusion_mask);
+        }
+        MPI_Bcast(occluded_image, NUM_COLS, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        index = matchImage(train_images, occluded_image, rows_per_rank);
+        if(index != -1 && train_labels[index] == test_labels[j]){
+            correctCount++;
+        }
+        free(occlusion_mask);
+        free(occluded_image);
+    }
+
+
+    MPI_Reduce(&correctCount, &global_correctCount, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    if(myrank == 0){printf("Success Rate Occlusion: %lf%%\n", 100 * (double) global_correctCount/40);}
+
+    if(myrank == 0){
+        // Write each double to the file
+        for(j = 0; j < NUM_COLS; j++){
+            fprintf(pyFile, "%lf\n", org_images[NUM_COLS + j]);
+        }
+    }
+
+
+    fclose(pyFile);
+
+    if(myrank == 0){system("python3 display.py");}
+
+    free(train_images);
+    free(test_images);
+    free(org_images);
+    free(means);
+    free(train_labels);
+    free(test_labels);
+
     MPI_Finalize();
-
-//     colMeans(train_images, means);
-
-
-// //----------------------------------------------------------------------------------------------
-//     // Open the CSV file for reading
-//     file = fopen("faces_test.csv", "r");
-//     if (file == NULL) {
-//         perror("Error opening file");
-//         return 1;
-//     }
-
-//     // Read each line of the file
-//     image_num = 0;
-//     while (fgets(line, MAX_LINE_LENGTH, file) != NULL) {
-//         // Remove newline character if present
-//         if (line[strlen(line) - 1] == '\n') {
-//             line[strlen(line) - 1] = '\0';
-//         }
-
-//         // Split the line into fields based on comma delimiter
-//         token = strtok(line, ",");
-//         field_count = 0;
-//         test_labels[image_num] = atoi(token);
-//         token = strtok(NULL, ",");
-//         while (token != NULL) {
-//             test_images[image_num * NUM_COLS + field_count] = strtod(token, NULL);
-//             token = strtok(NULL, ",");
-//             field_count++;
-//         }
-
-//         normalize(test_images, image_num * NUM_COLS);
-
-//         image_num++;
-//     }
-//     // Close the file
-//     fclose(file);
-//     int i;
-//     int j;
-//     for(j=0; j < NUM_COLS; j++){
-//         for(i = 0; i < 40; i++){
-//             test_images[i * NUM_COLS + j] = test_images[i * NUM_COLS + j] - means[j];
-//         }
-//     }
-// //----------------------------------------------------------------------------------------------
-//     int correctCount = 0;
-//     for(i = 0; i < 40; i++){
-//         double* ref_image = calloc(NUM_COLS, sizeof(double));
-//         for(j = i * NUM_COLS; j < i * NUM_COLS + NUM_COLS; j++){
-//             ref_image[j - (i * NUM_COLS)] = test_images[j];
-//         }
-//         int index = matchImage(train_images, ref_image);
-//         if(train_labels[index] == test_labels[i]){
-//             correctCount++;
-//         }
-//         free(ref_image);
-//     }
-
-//     printf("Success Rate: %lf%%\n", 100 * (double) correctCount/40);
-
-//     FILE* pyFile = fopen("output.txt", "w");
-//     if (pyFile == NULL) {
-//         perror("Error opening file");
-//         return 1;
-//     }
-//     correctCount = 0;
-//     int index = 0;
-//     for(j = 0; j < 40; j++){
-//         int* occlusion_mask = calloc(NUM_COLS, sizeof(int));
-//         for(i =0; i < NUM_COLS; i++){
-//             occlusion_mask[i] = rand() % 2;
-//         }
-//         double* occluded_image = calloc(NUM_COLS, sizeof(double));
-//         for(i = 0; i < NUM_COLS; i++){
-//             occluded_image[i] = test_images[j * NUM_COLS + i];
-//         }
-//         recover_occluded(occluded_image, occlusion_mask);
-
-//         index = matchImage(train_images, occluded_image);
-//         if(train_labels[index] == test_labels[j]){
-//             correctCount++;
-//         }
-//         free(occlusion_mask);
-//         free(occluded_image);
-//     }
-
-
-//     printf("Success Rate Occlusion: %lf%%\n", 100 * (double) correctCount/40);
-
-//     // Write each double to the file
-//     for(j = 0; j < NUM_COLS; j++){
-//         fprintf(pyFile, "%lf\n", org_images[index * NUM_COLS + j]);
-//     }
-
-//     fclose(pyFile);
-
-//     system("python3 display.py");
-
-//     free(train_images);
-//     free(test_images);
-//     free(org_images);
-//     free(means);
-//     free(train_labels);
-//     free(test_labels);
-
-//     return 0;
+    return 0;
 }

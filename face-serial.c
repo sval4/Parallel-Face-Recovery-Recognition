@@ -148,6 +148,7 @@ int matchImage(double* images, double* refImage){
             index = i;
         }
     }
+    // printf("GlobMinDist:%lf\n", minDist);    
     return index;
 }
 
@@ -165,7 +166,7 @@ int main() {
     int field_count;
 
     // Open the CSV file for reading
-    file = fopen("faces_train.csv", "r");
+    file = fopen("faces_train360.csv", "r");
     if (file == NULL) {
         perror("Error opening file");
         return 1;
@@ -190,7 +191,6 @@ int main() {
             token = strtok(NULL, ",");
             field_count++;
         }
-        printf("Count: %d\n", field_count);
 
         normalize(train_images, image_num * NUM_COLS);
 
@@ -200,6 +200,10 @@ int main() {
     fclose(file);
 
     colMeans(train_images, means);
+    // for(int i = 0; i < NUM_COLS; i++){
+    //     printf("Mean[%d]: %lf\n",i, means[i]);
+    // }
+
 
 
 //----------------------------------------------------------------------------------------------
@@ -242,6 +246,8 @@ int main() {
             test_images[i * NUM_COLS + j] = test_images[i * NUM_COLS + j] - means[j];
         }
     }
+    printf("Cell0: %lf\n", test_images[0]);
+    printf("Cell1: %lf\n", test_images[1]);
 //----------------------------------------------------------------------------------------------
     int correctCount = 0;
     for(i = 0; i < 40; i++){
