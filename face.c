@@ -211,12 +211,12 @@ int main(int argc, char *argv[]) {
 
         if(index != -1 && train_labels[index] == test_labels[i]){
             correctCount++;
-            sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Correct\n", myrank, i, index);
+            sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Predicted-Label: %d, Correct\n", myrank, i, index, train_labels[index]);
         }else{
             if(index == -1){
                 sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Found Better\n", myrank, i, index);
             }else{
-                sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Wrong\n", myrank, i, index);
+                sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Predicted-Label: %d, Correct-Label: %d, Wrong\n", myrank, i, index, train_labels[index], test_labels[i]);
             }
         }
         offset = myrank * 40 * 200 + i * 200;// Assuming each rank writes 200 characters
@@ -247,12 +247,12 @@ int main(int argc, char *argv[]) {
 
         if(index != -1 && train_labels[index] == test_labels[j]){
             correctCount++;
-            sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Correct\n", myrank, j, index);
+            sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Predicted-Label: %d, Correct\n", myrank, j, index, train_labels[index]);
         }else{
             if(index == -1){
                 sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Found Better\n", myrank, j, index);
             }else{
-                sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Wrong\n", myrank, j, index);
+                sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Predicted-Label: %d, Correct-Label: %d, Wrong\n", myrank, j, index, train_labels[index], test_labels[j]);
             }
         }
         offset = myrank * 40 * 200 + j * 200;// Assuming each rank writes 200 characters
