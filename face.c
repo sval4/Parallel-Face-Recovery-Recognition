@@ -9,99 +9,19 @@
 #define MAX_LINE_LENGTH (4097 * 3 + 4096)
 #define NUM_ROWS 360
 #define NUM_COLS 4096
-#define PATCH_SIZE 3 /* Patch size for neighborhood */
 
-// // Function to perform image inpainting using Markov Random Fields
-// void recover_occluded_image(double* image, double* mask, double* recovered_image) {
-//     // Iterate over each pixel in the image
-//     for (int y = 0; y < HEIGHT; y++) {
-//         for (int x = 0; x < WIDTH; x++) {
-//             int index = y * WIDTH + x;
+double* occluded_image = NULL;
+int* occluded_mask = NULL;
 
-//             // If the pixel is not occluded, copy the pixel value to the recovered image
-//             if (mask[index] == 0) {
-//                 recovered_image[index] = image[index];
-//             } else {
-//                 // If the pixel is occluded, estimate its value based on neighboring pixels
-
-//                 // Initialize variables for estimating the pixel value
-//                 double sum = 0.0;
-//                 double weight_sum = 0.0;
-
-//                 // Iterate over the patch centered at the current pixel
-//                 for (int dy = -PATCH_SIZE / 2; dy <= PATCH_SIZE / 2; dy++) {
-//                     for (int dx = -PATCH_SIZE / 2; dx <= PATCH_SIZE / 2; dx++) {
-//                         // Calculate the coordinates of the neighboring pixel
-//                         int nx = x + dx;
-//                         int ny = y + dy;
-
-//                         // Check if the neighboring pixel is within the image bounds
-//                         if (nx >= 0 && nx < WIDTH && ny >= 0 && ny < HEIGHT && mask[ny * WIDTH + nx] == 0) {
-//                             // Calculate the weight based on the distance between pixels
-//                             double distance = sqrt(dx * dx + dy * dy);
-//                             double weight = exp(-distance); // Adjust the weight function as needed
-
-//                             // Accumulate the weighted pixel value
-//                             sum += weight * image[ny * WIDTH + nx];
-//                             weight_sum += weight;
-//                         }
-//                     }
-//                 }
-
-//                 // Calculate the estimated pixel value as the weighted average of neighboring pixel values
-//                 if (weight_sum > 0) {
-//                     recovered_image[index] = sum / weight_sum;
-//                 } else {
-//                     // If no valid neighboring pixels are available, use a default value
-//                     recovered_image[index] = 0.0; // You can adjust this default value as needed
-//                 }
-//             }
-//         }
-//     }
-// }
-
-// Function to recover occluded regions using linear interpolation
-void recover_occluded(double* occluded_image, int* occlusion_mask) {
-    int i;
-    // Iterate over each pixel in the image
-    for(i = 0; i < NUM_COLS; i++){
-        if(occlusion_mask[i] == 1){
-            int left = i - 1;
-            while(left >= 0 && left % NUM_COLS != (NUM_COLS - 1) && occlusion_mask[left] == 1) left--;
-            int right = i + 1;
-            while(right < NUM_COLS && right % NUM_COLS != 0 && occlusion_mask[right] == 1) right++;
-            int top = i - NUM_COLS;
-            while(top >= 0 && occlusion_mask[top] == 1) top-= NUM_COLS;
-            int bottom = i + NUM_COLS;
-            while(bottom < NUM_COLS && occlusion_mask[bottom] == 1) bottom+= NUM_COLS;
-
-            // Perform linear interpolation
-            double interpolated_value = 0.0;
-            int count = 0;
-            if(left >= 0 && occlusion_mask[left] == 0){
-                interpolated_value += occluded_image[left];
-                count++;
-            }
-            if(right < NUM_COLS && occlusion_mask[right] == 0){
-                interpolated_value += occluded_image[right];
-                count++;
-            }
-            if(top >= 0 && occlusion_mask[top] == 0){
-                interpolated_value += occluded_image[top];
-                count++;
-            }
-            if(bottom < NUM_COLS && occlusion_mask[bottom] == 0){
-                interpolated_value += occluded_image[bottom];
-                count++;
-            }
-            if(count > 0){
-                occluded_image[i] = interpolated_value / count;
-            }
-        }
-    }
-}
+extern void occludedKernelLaunch(double** data, double* test_images, size_t rows, size_t cols, size_t threadsCount);
+extern void createData(size_t length, size_t cols);
+extern void copyToCPUOccluded(double* data, size_t length, int start);
+extern void createMask(int** data, size_t rows, size_t cols, size_t threadsCount);
 
 void normalize(double* row, int start){
+    //Loop through all pixels add up the square of all pixels
+    //Divide each pixel by the squared sum
+    //Like normalizing vector
     int i;
     double sum = 0;
     for(i = start; i < NUM_COLS + start; i++){
@@ -118,34 +38,33 @@ void colMeans(double* images, double* means, int rows_per_rank){
     int i, j;
     double local_sum[NUM_COLS] = {0};
 
-    for (j = 0; j < NUM_COLS; j++) {
-        for (i = 0; i < rows_per_rank; i++) {
+    for (j = 0; j < NUM_COLS; j++) { //For each column
+        for (i = 0; i < rows_per_rank; i++) { //Loop through each row for the rank and add up all pixels
             local_sum[j] += images[i * NUM_COLS + j];
         }
         MPI_Allreduce(MPI_IN_PLACE, &local_sum[j], 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
         means[j] = local_sum[j] / NUM_ROWS;
-        for (i = 0; i < rows_per_rank; i++) {
+        for (i = 0; i < rows_per_rank; i++) { //Mean centers data, subtract each pixel in a column by its column mean
             images[i * NUM_COLS + j] -= means[j];
         }
     }
 }
 
-double norm2(double* images, int start, double* refImage){
+double norm2(double* images, int start, double* refImage, int start_occ){
     int i;
     double sum = 0;
     for(i = start; i < NUM_COLS + start; i++){
-        sum += (images[i] - refImage[i - start]) * (images[i] - refImage[i - start]);
+        sum += (images[i] - refImage[start_occ + i - start]) * (images[i] - refImage[start_occ + i - start]);
     }
     return sqrt(sum);
-
 }
 
-int matchImage(double* images, double* refImage, int rows_per_rank){
+int matchImage(double* images, double* refImage, int rows_per_rank, int start){
     int i;
     double minDist = DBL_MAX;
     int index = 0;
     for(i = 0; i < rows_per_rank; i++){
-        double dist = norm2(images, i * NUM_COLS, refImage);
+        double dist = norm2(images, i * NUM_COLS, refImage, start);
         if(minDist > dist){
             minDist = dist;
             index = i;
@@ -165,12 +84,14 @@ int main(int argc, char *argv[]) {
     int myrank, numranks;
     MPI_File file;
     MPI_Status status;
+    double start_time = 0;
     char line[MAX_LINE_LENGTH + 2];
+    size_t threads_per_block = 0;
     char *token;
     double* train_images = calloc(NUM_ROWS * NUM_COLS, sizeof(double));
     double* test_images = calloc(40 * NUM_COLS, sizeof(double));
     double* org_images = calloc(NUM_ROWS * NUM_COLS, sizeof(double));
-    double* means = calloc(NUM_COLS, sizeof(double));
+    double* means = calloc(NUM_COLS, sizeof(double)); //Means of columns of train_images
     int* train_labels = calloc(NUM_ROWS, sizeof(int));
     int* test_labels = calloc(40, sizeof(int));
     int field_count;
@@ -181,11 +102,19 @@ int main(int argc, char *argv[]) {
     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
     MPI_Comm_size(MPI_COMM_WORLD, &numranks);
 
+    threads_per_block = atoi(argv[1]);
+
     int rows_per_rank = NUM_ROWS / numranks;
     int start_row = myrank * rows_per_rank;
 
+    createData(40, NUM_COLS); //Cuda Malloc Managed call
+
     // +2 to handle the \r\n at end of each line
     MPI_Offset offset = start_row * (MAX_LINE_LENGTH + 2);
+
+    if (myrank == 0) {
+        start_time = MPI_Wtime();
+    }
 
     MPI_File_open(MPI_COMM_WORLD, "faces_train360.csv", MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
     if (file == NULL) {
@@ -198,7 +127,7 @@ int main(int argc, char *argv[]) {
     for (i = 0; i < rows_per_rank; i++) {
         MPI_File_seek(file, offset + i * (MAX_LINE_LENGTH + 2), MPI_SEEK_SET);
         MPI_File_read(file, line, (MAX_LINE_LENGTH + 2), MPI_CHAR, &status);
-        line[MAX_LINE_LENGTH + 2] = '\0'; // Null-terminate the string
+        line[MAX_LINE_LENGTH + 1] = '\0'; // Null-terminate the string
         char* token = strtok(line, ",");
         train_labels[i] = atoi(token);
         // if(myrank == 0){printf("train Label: %d\n",train_labels[i] );}
@@ -228,7 +157,7 @@ int main(int argc, char *argv[]) {
 
 
 // //----------------------------------------------------------------------------------------------
-
+    //Number 40 is always the number of images in test dataset
     int test_rows_per_rank = 40 / numranks;
     int test_start_row = myrank * test_rows_per_rank;
 
@@ -244,7 +173,7 @@ int main(int argc, char *argv[]) {
     for (i = test_start_row; i < test_rows_per_rank + test_start_row; i++) {
         MPI_File_seek(file, offset + (i - test_start_row) * (MAX_LINE_LENGTH + 2), MPI_SEEK_SET);
         MPI_File_read(file, line, (MAX_LINE_LENGTH + 2), MPI_CHAR, &status);
-        line[MAX_LINE_LENGTH + 2] = '\0'; // Null-terminate the string
+        line[MAX_LINE_LENGTH + 1] = '\0'; // Null-terminate the string
         char* token = strtok(line, ",");
         test_labels[i] = atoi(token);
         // if(myrank == 1){printf("test Label: %d\n",test_labels[i]);}
@@ -262,7 +191,7 @@ int main(int argc, char *argv[]) {
     MPI_File_close(&file);
     for(j=0; j < NUM_COLS; j++){
         for(i = test_start_row; i < test_start_row + test_rows_per_rank; i++){
-            test_images[i * NUM_COLS + j] = test_images[i * NUM_COLS + j] - means[j];
+            test_images[i * NUM_COLS + j] -= means[j];
         }
     }
     MPI_Allgather(test_images + (test_start_row * NUM_COLS), test_rows_per_rank * NUM_COLS, MPI_DOUBLE, test_images, test_rows_per_rank * NUM_COLS, MPI_DOUBLE, MPI_COMM_WORLD);
@@ -272,10 +201,10 @@ int main(int argc, char *argv[]) {
     int correctCount = 0;
     for(i = 0; i < 40; i++){
         double* ref_image = calloc(NUM_COLS, sizeof(double));
-        for(j = i * NUM_COLS; j < i * NUM_COLS + NUM_COLS; j++){
+        for(j = i * NUM_COLS; j < i * NUM_COLS + NUM_COLS; j++){ //Ref image is a given test image
             ref_image[j - (i * NUM_COLS)] = test_images[j];
         }
-        int index = matchImage(train_images, ref_image, rows_per_rank);
+        int index = matchImage(train_images, ref_image, rows_per_rank, 0); // Match ref image with closest training image
         if(index != -1 && train_labels[index] == test_labels[i]){
             correctCount++;
         }
@@ -285,49 +214,36 @@ int main(int argc, char *argv[]) {
     MPI_Reduce(&correctCount, &global_correctCount, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     if(myrank == 0){printf("Success Rate: %lf%%\n", 100 * (double) global_correctCount/40);}
 
-    FILE* pyFile = fopen("output.txt", "w");
-    if (pyFile == NULL) {
-        perror("Error opening file");
-        return 1;
-    }
     correctCount = 0;
     int index = 0;
+    double* occluded_image_local = calloc(40 * NUM_COLS, sizeof(double));
     for(j = 0; j < 40; j++){
-        int* occlusion_mask = calloc(NUM_COLS, sizeof(int));
-        double* occluded_image = calloc(NUM_COLS, sizeof(double));
-        if(myrank == 0){
-            for(i = 0; i < NUM_COLS; i++){
-                occlusion_mask[i] = rand() % 2;
-            }
-            for(i = 0; i < NUM_COLS; i++){
-                occluded_image[i] = test_images[j * NUM_COLS + i];
-            }
-            recover_occluded(occluded_image, occlusion_mask);
+        if(myrank == 0 && j == 0){
+            createMask(&occluded_mask, 40, NUM_COLS, threads_per_block);
+            occludedKernelLaunch(&occluded_image, test_images, 40, NUM_COLS, threads_per_block);
+            // copyToCPUOccluded(occluded_image_local, 40 * NUM_COLS, 0); Might not need this
         }
-        MPI_Bcast(occluded_image, NUM_COLS, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-        index = matchImage(train_images, occluded_image, rows_per_rank);
+        if(j == 0){
+            MPI_Bcast(occluded_image, 40 * NUM_COLS, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        }
+        index = matchImage(train_images, occluded_image, rows_per_rank, j*NUM_COLS);
+        MPI_Barrier(MPI_COMM_WORLD);
         if(index != -1 && train_labels[index] == test_labels[j]){
             correctCount++;
         }
-        free(occlusion_mask);
-        free(occluded_image);
     }
+    MPI_Barrier(MPI_COMM_WORLD);
 
 
     MPI_Reduce(&correctCount, &global_correctCount, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     if(myrank == 0){printf("Success Rate Occlusion: %lf%%\n", 100 * (double) global_correctCount/40);}
 
-    if(myrank == 0){
-        // Write each double to the file
-        for(j = 0; j < NUM_COLS; j++){
-            fprintf(pyFile, "%lf\n", org_images[NUM_COLS + j]);
-        }
+    if (myrank == 0) {
+        double t2 = MPI_Wtime();
+        printf("Time is: %lf seconds\n", t2 - start_time);
     }
 
-
-    fclose(pyFile);
-
-    if(myrank == 0){system("python3 display.py");}
+    // if(myrank == 0){system("python3 display.py");}
 
     free(train_images);
     free(test_images);
