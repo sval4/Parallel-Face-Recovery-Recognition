@@ -225,21 +225,38 @@ int main(int argc, char *argv[]) {
     MPI_Allgather(test_labels + test_start_row, test_rows_per_rank, MPI_INT, test_labels, test_rows_per_rank, MPI_INT, MPI_COMM_WORLD);
 
 //----------------------------------------------------------------------------------------------
+    MPI_File_open(MPI_COMM_WORLD, "output2.txt", MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
+    
+    
     int correctCount = 0;
     for(i = 0; i < 40; i++){
         double* ref_image = calloc(NUM_COLS, sizeof(double));
         for(j = i * NUM_COLS; j < i * NUM_COLS + NUM_COLS; j++){
             ref_image[j - (i * NUM_COLS)] = test_images[j];
         }
+        
         int index = matchImage(train_images, ref_image, rows_per_rank);
+
+        char outputString[200];
         if(index != -1 && train_labels[index] == test_labels[i]){
             correctCount++;
+            sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Correct\n", myrank, i, index);
+        }else{
+            if(index == -1){
+                sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Found Better\n", myrank, i, index);
+            }else{
+                sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Wrong\n", myrank, i, index);
+            }
         }
+        offset = myrank * 40 * 200 + i * 200;// Assuming each rank writes 100 characters
+        MPI_File_write_at(file, offset, outputString, strlen(outputString), MPI_CHAR, MPI_STATUS_IGNORE);
         free(ref_image);
     }
     int global_correctCount;
     MPI_Reduce(&correctCount, &global_correctCount, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     if(myrank == 0){printf("Success Rate: %lf%%\n", 100 * (double) global_correctCount/40);}
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_File_close(&file);
 
     FILE* pyFile = fopen("output.txt", "w");
     if (pyFile == NULL) {

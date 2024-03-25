@@ -198,6 +198,7 @@ int main(int argc, char *argv[]) {
     MPI_Allgather(test_labels + test_start_row, test_rows_per_rank, MPI_INT, test_labels, test_rows_per_rank, MPI_INT, MPI_COMM_WORLD);
 
 //----------------------------------------------------------------------------------------------
+    MPI_File_open(MPI_COMM_WORLD, "match.txt", MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
     int correctCount = 0;
     for(i = 0; i < 40; i++){
         double* ref_image = calloc(NUM_COLS, sizeof(double));
@@ -205,18 +206,32 @@ int main(int argc, char *argv[]) {
             ref_image[j - (i * NUM_COLS)] = test_images[j];
         }
         int index = matchImage(train_images, ref_image, rows_per_rank, 0); // Match ref image with closest training image
+
+        char outputString[200];
+
         if(index != -1 && train_labels[index] == test_labels[i]){
             correctCount++;
+            sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Correct\n", myrank, i, index);
+        }else{
+            if(index == -1){
+                sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Found Better\n", myrank, i, index);
+            }else{
+                sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Wrong\n", myrank, i, index);
+            }
         }
+        offset = myrank * 40 * 200 + i * 200;// Assuming each rank writes 200 characters
+        MPI_File_write_at(file, offset, outputString, strlen(outputString), MPI_CHAR, MPI_STATUS_IGNORE);
         free(ref_image);
     }
     int global_correctCount;
     MPI_Reduce(&correctCount, &global_correctCount, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     if(myrank == 0){printf("Success Rate: %lf%%\n", 100 * (double) global_correctCount/40);}
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_File_close(&file);
 
     correctCount = 0;
     int index = 0;
-    double* occluded_image_local = calloc(40 * NUM_COLS, sizeof(double));
+    MPI_File_open(MPI_COMM_WORLD, "occlusion_recovery.txt", MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
     for(j = 0; j < 40; j++){
         if(myrank == 0 && j == 0){
             createMask(&occluded_mask, 40, NUM_COLS, threads_per_block);
@@ -227,13 +242,24 @@ int main(int argc, char *argv[]) {
             MPI_Bcast(occluded_image, 40 * NUM_COLS, MPI_DOUBLE, 0, MPI_COMM_WORLD);
         }
         index = matchImage(train_images, occluded_image, rows_per_rank, j*NUM_COLS);
-        MPI_Barrier(MPI_COMM_WORLD);
+
+        char outputString[200];
+
         if(index != -1 && train_labels[index] == test_labels[j]){
             correctCount++;
+            sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Correct\n", myrank, j, index);
+        }else{
+            if(index == -1){
+                sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Found Better\n", myrank, j, index);
+            }else{
+                sprintf(outputString, "Rank: %d, Image: %d, Predicted-Index: %d, Wrong\n", myrank, j, index);
+            }
         }
+        offset = myrank * 40 * 200 + j * 200;// Assuming each rank writes 200 characters
+        MPI_File_write_at(file, offset, outputString, strlen(outputString), MPI_CHAR, MPI_STATUS_IGNORE);
     }
     MPI_Barrier(MPI_COMM_WORLD);
-
+    MPI_File_close(&file);
 
     MPI_Reduce(&correctCount, &global_correctCount, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     if(myrank == 0){printf("Success Rate Occlusion: %lf%%\n", 100 * (double) global_correctCount/40);}
