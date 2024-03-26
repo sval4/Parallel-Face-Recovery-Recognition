@@ -62,17 +62,18 @@
 // Function to recover occluded regions using linear interpolation
 void recover_occluded(double* occluded_image, int* occlusion_mask) {
     int i;
+    int width = sqrt(NUM_COLS);
     // Iterate over each pixel in the image
     for(i = 0; i < NUM_COLS; i++){
         if(occlusion_mask[i] == 1){
             int left = i - 1;
-            while(left >= 0 && left % NUM_COLS != (NUM_COLS - 1) && occlusion_mask[left] == 1) left--;
+            while(left >= 0 && left % width != (width - 1) && occlusion_mask[left] == 1) left--;
             int right = i + 1;
-            while(right < NUM_COLS && right % NUM_COLS != 0 && occlusion_mask[right] == 1) right++;
-            int top = i - NUM_COLS;
-            while(top >= 0 && occlusion_mask[top] == 1) top-= NUM_COLS;
-            int bottom = i + NUM_COLS;
-            while(bottom < NUM_COLS && occlusion_mask[bottom] == 1) bottom+= NUM_COLS;
+            while(right < NUM_COLS && right % width != 0 && occlusion_mask[right] == 1) right++;
+            int top = i - width;
+            while(top >= 0 && occlusion_mask[top] == 1) top-= width;
+            int bottom = i + width;
+            while(bottom < NUM_COLS && occlusion_mask[bottom] == 1) bottom+= width;
 
             // Perform linear interpolation
             double interpolated_value = 0.0;
@@ -250,17 +251,23 @@ int main() {
     printf("Cell1: %lf\n", test_images[1]);
 //----------------------------------------------------------------------------------------------
     int correctCount = 0;
+    file = fopen("match.txt", "w");
     for(i = 0; i < 40; i++){
         double* ref_image = calloc(NUM_COLS, sizeof(double));
         for(j = i * NUM_COLS; j < i * NUM_COLS + NUM_COLS; j++){
             ref_image[j - (i * NUM_COLS)] = test_images[j];
         }
         int index = matchImage(train_images, ref_image);
+        
         if(train_labels[index] == test_labels[i]){
             correctCount++;
+            fprintf(file, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Correct\n", index, i, train_labels[index]);
+        }else{
+            fprintf(file, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Correct-Label: %d, Wrong\n", index, i, train_labels[index], test_labels[i]);
         }
         free(ref_image);
     }
+    fclose(file);
 
     printf("Success Rate: %lf%%\n", 100 * (double) correctCount/40);
 
@@ -270,6 +277,7 @@ int main() {
         return 1;
     }
     correctCount = 0;
+    file = fopen("occlusion_recovery.txt", "w");
     int index = 0;
     double* occluded_image = calloc(NUM_COLS, sizeof(double));
     for(j = 0; j < 40; j++){
@@ -285,9 +293,13 @@ int main() {
         index = matchImage(train_images, occluded_image);
         if(train_labels[index] == test_labels[j]){
             correctCount++;
+            fprintf(file, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Correct\n", index, j, train_labels[index]);
+        }else{
+            fprintf(file, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Correct-Label: %d, Wrong\n", index, j, train_labels[index], test_labels[j]);
         }
         free(occlusion_mask);
     }
+    fclose(file);
 
 
     printf("Success Rate Occlusion: %lf%%\n", 100 * (double) correctCount/40);
