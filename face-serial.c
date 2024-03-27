@@ -247,8 +247,6 @@ int main() {
             test_images[i * NUM_COLS + j] = test_images[i * NUM_COLS + j] - means[j];
         }
     }
-    printf("Cell0: %lf\n", test_images[0]);
-    printf("Cell1: %lf\n", test_images[1]);
 //----------------------------------------------------------------------------------------------
     int correctCount = 0;
     file = fopen("match.txt", "w");

@@ -12,12 +12,26 @@
 extern double* occluded_image;
 extern int* occluded_mask;
 
-extern "C" void createData(size_t length, size_t cols){
-    cudaMallocManaged( &occluded_image, ( length * cols * sizeof(double))); 
-    cudaMemset(occluded_image, 0, length * cols * sizeof(double));
+extern double *train_images;
 
-    cudaMallocManaged( &occluded_mask, ( length * cols * sizeof(int))); 
-    cudaMemset(occluded_mask, 0, length * cols * sizeof(int));
+extern double* test_images;
+extern double* dist;
+
+extern "C" void createData(size_t length, size_t cols){
+    cudaMallocManaged( &occluded_image, ( 40 * cols * sizeof(double))); 
+    cudaMemset(occluded_image, 0, 40 * cols * sizeof(double));
+
+    cudaMallocManaged( &occluded_mask, ( 40 * cols * sizeof(int))); 
+    cudaMemset(occluded_mask, 0, 40 * cols * sizeof(int));
+
+    cudaMallocManaged( &dist, ( length * cols *sizeof(double))); 
+    cudaMemset(dist, 0, length * cols *sizeof(double));
+
+    cudaMallocManaged( &train_images, ( length * cols * sizeof(double)));
+    cudaMemset(train_images, 0, length * cols * sizeof(double));
+
+    cudaMallocManaged( &test_images, ( 40 * cols * sizeof(double))); 
+    cudaMemset(test_images, 0, 40 * cols * sizeof(double));
 }
 
 __global__ void occludedKernel(double* data, double* test_images, int* occluded_mask, size_t rows, size_t cols) {
@@ -88,4 +102,65 @@ extern "C" void createMask(int** data, size_t rows, size_t cols, size_t threadsC
 
 extern "C" void copyToCPUOccluded(double* data, size_t length, int start){
     cudaMemcpy(data, occluded_image + (start * length), length * sizeof(double), cudaMemcpyDeviceToHost);
+}
+
+__global__ void normalizeKernel(double* data, size_t rows, size_t cols){
+    for(size_t row_idx = blockIdx.x * blockDim.x + threadIdx.x; row_idx < rows; row_idx += blockDim.x * gridDim.x) {
+        int start = row_idx * cols;
+        double sum = 0.0;
+
+        // Calculate the sum of squares of elements in the row
+        for (int i = start; i < start + cols; i++) {
+            sum += data[i] * data[i];
+        }
+
+        // Normalize each element in the row by dividing by the square root of the sum of squares
+        double norm_factor = sqrt(sum);
+        for (int i = start; i < start + cols; i++) {
+            data[i] /= norm_factor;
+        }
+    }
+}
+
+extern "C" void normalizeKernelLaunch(double** data, size_t rows, size_t cols, size_t threadsCount){
+    size_t blockSize = threadsCount;
+    size_t gridSize = (((rows * cols) + blockSize - 1) / blockSize);
+    normalizeKernel<<<gridSize, blockSize>>>(*data, rows, cols);
+    cudaDeviceSynchronize();
+}
+
+
+__global__ void meanCenterKernel(double* data, double* means, size_t rows, size_t cols){
+    for(size_t idx = blockIdx.x * blockDim.x + threadIdx.x; idx < rows * cols; idx += blockDim.x * gridDim.x) {
+        size_t loc = idx % cols;
+        data[idx] -= means[loc];
+    }
+}
+
+
+extern "C" void meanCenterKernelLaunch(double** data, double* means, size_t rows, size_t cols, size_t threadsCount){
+    size_t blockSize = threadsCount;
+    size_t gridSize = (((rows * cols) + blockSize - 1) / blockSize);
+    meanCenterKernel<<<gridSize, blockSize>>>(*data, means, rows, cols);
+    cudaDeviceSynchronize();
+}
+
+
+__global__ void norm2Kernel(double* images, double* test, size_t rows, size_t cols, size_t start_test, double* answer){
+    size_t index;
+    for(index = blockIdx.x * blockDim.x + threadIdx.x; index < rows; index += blockDim.x * gridDim.x) {
+        double sum = 0.0;
+        size_t start = index * cols;
+        for(int i = start; i < cols + start; i++){
+            sum += (images[i] - test[start_test + i - start]) * (images[i] - test[start_test + i - start]);
+        }
+        answer[index] = sqrt(sum);
+    }
+}
+
+extern "C" void norm2KernelLaunch(double** data, double* test, size_t rows, size_t cols, size_t start, size_t threadsCount, double** answer){
+    size_t blockSize = threadsCount;
+    size_t gridSize = (((rows * cols) + blockSize - 1) / blockSize);
+    norm2Kernel<<<gridSize, blockSize>>>(*data, test, rows, cols, start, *answer);
+    cudaDeviceSynchronize();
 }

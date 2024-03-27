@@ -12,27 +12,18 @@
 
 double* occluded_image = NULL;
 int* occluded_mask = NULL;
+double* test_images = NULL;
+double *train_images = NULL;
+double *dist = NULL;
+size_t threads_per_block = 0;
 
 extern void occludedKernelLaunch(double** data, double* test_images, size_t rows, size_t cols, size_t threadsCount);
 extern void createData(size_t length, size_t cols);
 extern void copyToCPUOccluded(double* data, size_t length, int start);
 extern void createMask(int** data, size_t rows, size_t cols, size_t threadsCount);
-
-void normalize(double* row, int start){
-    //Loop through all pixels add up the square of all pixels
-    //Divide each pixel by the squared sum
-    //Like normalizing vector
-    int i;
-    double sum = 0;
-    for(i = start; i < NUM_COLS + start; i++){
-        sum += row[i] * row[i];
-    }
-
-    for(i=start; i < NUM_COLS + start; i++){
-        row[i] = row[i]/sqrt(sum);
-    }
-    
-}
+extern void normalizeKernelLaunch(double** data, size_t rows, size_t cols, size_t threadsCount);
+extern void meanCenterKernelLaunch(double** data, double* means, size_t rows, size_t cols, size_t threadsCount);
+extern void norm2KernelLaunch(double** data, double* test, size_t rows, size_t cols, size_t start, size_t threadsCount, double** answer);
 
 void colMeans(double* images, double* means, int rows_per_rank){
     int i, j;
@@ -44,9 +35,6 @@ void colMeans(double* images, double* means, int rows_per_rank){
         }
         MPI_Allreduce(MPI_IN_PLACE, &local_sum[j], 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
         means[j] = local_sum[j] / NUM_ROWS;
-        for (i = 0; i < rows_per_rank; i++) { //Mean centers data, subtract each pixel in a column by its column mean
-            images[i * NUM_COLS + j] -= means[j];
-        }
     }
 }
 
@@ -59,14 +47,36 @@ double norm2(double* images, int start, double* refImage, int start_occ){
     return sqrt(sum);
 }
 
+//CUDA version, but it might be slower
+// int matchImage(double* images, double* refImage, int rows_per_rank, int start){
+//     int i;
+//     double minDist = DBL_MAX;
+//     int index = 0;
+//     norm2KernelLaunch(&images, refImage, rows_per_rank, NUM_COLS, start, threads_per_block, &dist);
+//     for(i = 0; i < rows_per_rank; i++){
+//         if(minDist > dist[i]){
+//             minDist = dist[i];
+//             index = i;
+//         }
+//     }
+//     double global_minDist;
+//     MPI_Allreduce(&minDist, &global_minDist, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+//     // if(myrank == 0){printf("GlobMinDist:%lf\n", global_minDist);}
+//     if (minDist > global_minDist) {
+//         index = -1;
+//     }
+//     return index;
+// }
+
+
 int matchImage(double* images, double* refImage, int rows_per_rank, int start){
     int i;
     double minDist = DBL_MAX;
     int index = 0;
     for(i = 0; i < rows_per_rank; i++){
-        double dist = norm2(images, i * NUM_COLS, refImage, start);
-        if(minDist > dist){
-            minDist = dist;
+        double distance = norm2(images, i*NUM_COLS, refImage, start);
+        if(minDist > distance){
+            minDist = distance;
             index = i;
         }
     }
@@ -86,10 +96,7 @@ int main(int argc, char *argv[]) {
     MPI_Status status;
     double start_time = 0;
     char line[MAX_LINE_LENGTH + 2];
-    size_t threads_per_block = 0;
     char *token;
-    double* train_images = calloc(NUM_ROWS * NUM_COLS, sizeof(double));
-    double* test_images = calloc(40 * NUM_COLS, sizeof(double));
     double* org_images = calloc(NUM_ROWS * NUM_COLS, sizeof(double));
     double* means = calloc(NUM_COLS, sizeof(double)); //Means of columns of train_images
     int* train_labels = calloc(NUM_ROWS, sizeof(int));
@@ -107,7 +114,7 @@ int main(int argc, char *argv[]) {
     int rows_per_rank = NUM_ROWS / numranks;
     int start_row = myrank * rows_per_rank;
 
-    createData(40, NUM_COLS); //Cuda Malloc Managed call
+    createData(rows_per_rank, NUM_COLS); //Cuda Malloc Managed call
 
     // +2 to handle the \r\n at end of each line
     MPI_Offset offset = start_row * (MAX_LINE_LENGTH + 2);
@@ -141,13 +148,13 @@ int main(int argc, char *argv[]) {
             field_count++;
         }
         // if(myrank == 0){printf("Count: %d\n", field_count);}
-        normalize(train_images, i * NUM_COLS);
     }
 
 
     MPI_File_close(&file);
-
+    normalizeKernelLaunch(&train_images, rows_per_rank, NUM_COLS, threads_per_block);
     colMeans(train_images, means, rows_per_rank);
+    meanCenterKernelLaunch(&train_images, means, rows_per_rank, NUM_COLS, threads_per_block);
     if(myrank == 1){
         // for(i = 0; i < NUM_COLS; i++){
         //     printf("Mean[%d]: %lf\n",i, means[i]);
@@ -186,14 +193,10 @@ int main(int argc, char *argv[]) {
             field_count++;
         }
         // if(myrank == 0){printf("Count: %d\n", field_count);}
-        normalize(test_images, i * NUM_COLS);
     }
     MPI_File_close(&file);
-    for(j=0; j < NUM_COLS; j++){
-        for(i = test_start_row; i < test_start_row + test_rows_per_rank; i++){
-            test_images[i * NUM_COLS + j] -= means[j];
-        }
-    }
+    normalizeKernelLaunch(&test_images, 40, NUM_COLS, threads_per_block);
+    meanCenterKernelLaunch(&test_images, means, 40, NUM_COLS, threads_per_block);
     MPI_Allgather(test_images + (test_start_row * NUM_COLS), test_rows_per_rank * NUM_COLS, MPI_DOUBLE, test_images, test_rows_per_rank * NUM_COLS, MPI_DOUBLE, MPI_COMM_WORLD);
     MPI_Allgather(test_labels + test_start_row, test_rows_per_rank, MPI_INT, test_labels, test_rows_per_rank, MPI_INT, MPI_COMM_WORLD);
 
@@ -214,7 +217,7 @@ int main(int argc, char *argv[]) {
             sprintf(outputString, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Correct\n", myrank * rows_per_rank + index, i, train_labels[index]);
         }else{
             if(index == -1){
-                sprintf(outputString, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Found Better\n", myrank * rows_per_rank + index, i, index);
+                sprintf(outputString, "Train-Image: %d, Test-Image: %d, Found Better\n", index, i);
             }else{
                 sprintf(outputString, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Correct-Label: %d, Wrong\n", myrank * rows_per_rank + index, i, train_labels[index], test_labels[i]);
             }
@@ -250,7 +253,7 @@ int main(int argc, char *argv[]) {
             sprintf(outputString, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Correct\n", myrank * rows_per_rank + index, j, train_labels[index]);
         }else{
             if(index == -1){
-                sprintf(outputString, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Found Better\n", myrank * rows_per_rank + index, j, index);
+                sprintf(outputString, "Train-Image: %d, Test-Image: %d, Found Better\n", index, j);
             }else{
                 sprintf(outputString, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Correct-Label: %d, Wrong\n", myrank * rows_per_rank + index, j, train_labels[index], test_labels[j]);
             }
@@ -271,8 +274,8 @@ int main(int argc, char *argv[]) {
 
     // if(myrank == 0){system("python3 display.py");}
 
-    free(train_images);
-    free(test_images);
+    // free(train_images);
+    // free(test_images);
     free(org_images);
     free(means);
     free(train_labels);
