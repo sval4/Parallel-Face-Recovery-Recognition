@@ -37,6 +37,10 @@ cp face.cu ~/mounts/home
 cp run.mk ~/mounts/home
 cp faces_train360.csv ~/mounts/home
 cp faces_test.csv ~/mounts/home
+cp faces_train360x2.csv ~/mounts/home
+cp faces_train360x4.csv ~/mounts/home
+cp faces_train360x8.csv ~/mounts/home
+cp faces_train360x16.csv ~/mounts/home
 
 rm FACE*
 split -b 3k face.c FACE

@@ -7,7 +7,6 @@
 #include <mpi.h>
 
 #define MAX_LINE_LENGTH (4097 * 3 + 4096)
-#define NUM_ROWS 360
 #define NUM_COLS 4096
 
 double* occluded_image = NULL;
@@ -16,9 +15,11 @@ double* test_images = NULL;
 double *train_images = NULL;
 double *dist = NULL;
 size_t threads_per_block = 0;
+size_t NUM_ROWS = 0;
+size_t TEST_NUM_ROWS = 0;
 
 extern void occludedKernelLaunch(double** data, double* test_images, size_t rows, size_t cols, size_t threadsCount);
-extern void createData(size_t length, size_t cols);
+extern void createData(size_t length, size_t cols, size_t test_length);
 extern void copyToCPUOccluded(double* data, size_t length, int start);
 extern void createMask(int** data, size_t rows, size_t cols, size_t threadsCount);
 extern void normalizeKernelLaunch(double** data, size_t rows, size_t cols, size_t threadsCount);
@@ -91,6 +92,11 @@ int matchImage(double* images, double* refImage, int rows_per_rank, int start){
 
 int main(int argc, char *argv[]) {
     srand(123);
+    int train_file_num = atoi(argv[1]);
+    int test_file_num = atoi(argv[2]);
+    threads_per_block = atoi(argv[3]);
+    NUM_ROWS = 360 * train_file_num;
+    TEST_NUM_ROWS = 360 * test_file_num;
     int myrank, numranks;
     MPI_File file;
     MPI_Status status;
@@ -100,21 +106,24 @@ int main(int argc, char *argv[]) {
     double* org_images = calloc(NUM_ROWS * NUM_COLS, sizeof(double));
     double* means = calloc(NUM_COLS, sizeof(double)); //Means of columns of train_images
     int* train_labels = calloc(NUM_ROWS, sizeof(int));
-    int* test_labels = calloc(40, sizeof(int));
+    int* test_labels = calloc(TEST_NUM_ROWS, sizeof(int));
     int field_count;
     int i,j;
+    char train_file[1000];
+    char test_file[1000];
 
 
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
     MPI_Comm_size(MPI_COMM_WORLD, &numranks);
 
-    threads_per_block = atoi(argv[1]);
+    sprintf(train_file, "faces_train360x%d.csv", train_file_num);
+    sprintf(test_file, "faces_testx%d.csv", test_file_num);
 
     int rows_per_rank = NUM_ROWS / numranks;
     int start_row = myrank * rows_per_rank;
 
-    createData(rows_per_rank, NUM_COLS); //Cuda Malloc Managed call
+    createData(rows_per_rank, NUM_COLS, TEST_NUM_ROWS); //Cuda Malloc Managed call
 
     // +2 to handle the \r\n at end of each line
     MPI_Offset offset = start_row * (MAX_LINE_LENGTH + 2);
@@ -123,7 +132,7 @@ int main(int argc, char *argv[]) {
         start_time = MPI_Wtime();
     }
 
-    MPI_File_open(MPI_COMM_WORLD, "faces_train360.csv", MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
+    MPI_File_open(MPI_COMM_WORLD, train_file, MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
     if (file == NULL) {
         perror("Error opening file");
         MPI_Finalize();
@@ -164,14 +173,14 @@ int main(int argc, char *argv[]) {
 
 
 // //----------------------------------------------------------------------------------------------
-    //Number 40 is always the number of images in test dataset
-    int test_rows_per_rank = 40 / numranks;
+    //Number TEST_NUM_ROWS is always the number of images in test dataset
+    int test_rows_per_rank = TEST_NUM_ROWS / numranks;
     int test_start_row = myrank * test_rows_per_rank;
 
     // +2 to handle the \r\n
     offset = test_start_row * (MAX_LINE_LENGTH + 2);
 
-    MPI_File_open(MPI_COMM_WORLD, "faces_test.csv", MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
+    MPI_File_open(MPI_COMM_WORLD, test_file, MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
     if (file == NULL) {
         perror("Error opening file");
         MPI_Finalize();
@@ -195,77 +204,87 @@ int main(int argc, char *argv[]) {
         // if(myrank == 0){printf("Count: %d\n", field_count);}
     }
     MPI_File_close(&file);
-    normalizeKernelLaunch(&test_images, 40, NUM_COLS, threads_per_block);
-    meanCenterKernelLaunch(&test_images, means, 40, NUM_COLS, threads_per_block);
+    normalizeKernelLaunch(&test_images, TEST_NUM_ROWS, NUM_COLS, threads_per_block);
+    meanCenterKernelLaunch(&test_images, means, TEST_NUM_ROWS, NUM_COLS, threads_per_block);
     MPI_Allgather(test_images + (test_start_row * NUM_COLS), test_rows_per_rank * NUM_COLS, MPI_DOUBLE, test_images, test_rows_per_rank * NUM_COLS, MPI_DOUBLE, MPI_COMM_WORLD);
     MPI_Allgather(test_labels + test_start_row, test_rows_per_rank, MPI_INT, test_labels, test_rows_per_rank, MPI_INT, MPI_COMM_WORLD);
 
 //----------------------------------------------------------------------------------------------
     MPI_File_open(MPI_COMM_WORLD, "match.txt", MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
     int correctCount = 0;
-    for(i = 0; i < 40; i++){
+    for(i = 0; i < TEST_NUM_ROWS; i++){
         double* ref_image = calloc(NUM_COLS, sizeof(double));
         for(j = i * NUM_COLS; j < i * NUM_COLS + NUM_COLS; j++){ //Ref image is a given test image
             ref_image[j - (i * NUM_COLS)] = test_images[j];
         }
         int index = matchImage(train_images, ref_image, rows_per_rank, 0); // Match ref image with closest training image
 
-        char outputString[200];
+        char outputString[150];
 
         if(index != -1 && train_labels[index] == test_labels[i]){
             correctCount++;
-            sprintf(outputString, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Correct\n", myrank * rows_per_rank + index, i, train_labels[index]);
+            sprintf(outputString, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Correct", myrank * rows_per_rank + index, i, train_labels[index]);
         }else{
             if(index == -1){
-                sprintf(outputString, "Train-Image: %d, Test-Image: %d, Found Better\n", index, i);
+                sprintf(outputString, "Train-Image: %d, Test-Image: %d, Found Better", index, i);
             }else{
-                sprintf(outputString, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Correct-Label: %d, Wrong\n", myrank * rows_per_rank + index, i, train_labels[index], test_labels[i]);
+                sprintf(outputString, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Correct-Label: %d, Wrong", myrank * rows_per_rank + index, i, train_labels[index], test_labels[i]);
             }
         }
-        offset = myrank * 40 * 200 + i * 200;// Assuming each rank writes 200 characters
-        MPI_File_write_at(file, offset, outputString, strlen(outputString), MPI_CHAR, MPI_STATUS_IGNORE);
+        offset = myrank * TEST_NUM_ROWS * 150 + i * 150;// Assuming each rank writes 150 characters
+        if (strlen(outputString) < 150) {
+            sprintf(outputString + strlen(outputString), "%*s", 150 - (int) strlen(outputString), " ");
+            outputString[strlen(outputString) - 2] = '\n';
+            outputString[strlen(outputString) - 1] = '\0';
+        }
+        MPI_File_write_at(file, offset, outputString, strlen(outputString)+ 1, MPI_CHAR, MPI_STATUS_IGNORE);
         free(ref_image);
     }
     int global_correctCount;
     MPI_Reduce(&correctCount, &global_correctCount, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
-    if(myrank == 0){printf("Success Rate: %lf%%\n", 100 * (double) global_correctCount/40);}
+    if(myrank == 0){printf("Success Rate: %lf%%\n", (100 * (double) global_correctCount/TEST_NUM_ROWS)/train_file_num);}
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_File_close(&file);
 
     correctCount = 0;
     int index = 0;
     MPI_File_open(MPI_COMM_WORLD, "occlusion_recovery.txt", MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
-    for(j = 0; j < 40; j++){
+    for(j = 0; j < TEST_NUM_ROWS; j++){
         if(myrank == 0 && j == 0){
-            createMask(&occluded_mask, 40, NUM_COLS, threads_per_block);
-            occludedKernelLaunch(&occluded_image, test_images, 40, NUM_COLS, threads_per_block);
-            // copyToCPUOccluded(occluded_image_local, 40 * NUM_COLS, 0); Might not need this
+            createMask(&occluded_mask, TEST_NUM_ROWS, NUM_COLS, threads_per_block);
+            occludedKernelLaunch(&occluded_image, test_images, TEST_NUM_ROWS, NUM_COLS, threads_per_block);
+            // copyToCPUOccluded(occluded_image_local, TEST_NUM_ROWS * NUM_COLS, 0); Might not need this
         }
         if(j == 0){
-            MPI_Bcast(occluded_image, 40 * NUM_COLS, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+            MPI_Bcast(occluded_image, TEST_NUM_ROWS * NUM_COLS, MPI_DOUBLE, 0, MPI_COMM_WORLD);
         }
         index = matchImage(train_images, occluded_image, rows_per_rank, j*NUM_COLS);
 
-        char outputString[200];
+        char outputString[150];
 
         if(index != -1 && train_labels[index] == test_labels[j]){
             correctCount++;
-            sprintf(outputString, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Correct\n", myrank * rows_per_rank + index, j, train_labels[index]);
+            sprintf(outputString, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Correct", myrank * rows_per_rank + index, j, train_labels[index]);
         }else{
             if(index == -1){
-                sprintf(outputString, "Train-Image: %d, Test-Image: %d, Found Better\n", index, j);
+                sprintf(outputString, "Train-Image: %d, Test-Image: %d, Found Better", index, j);
             }else{
-                sprintf(outputString, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Correct-Label: %d, Wrong\n", myrank * rows_per_rank + index, j, train_labels[index], test_labels[j]);
+                sprintf(outputString, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Correct-Label: %d, Wrong", myrank * rows_per_rank + index, j, train_labels[index], test_labels[j]);
             }
         }
-        offset = myrank * 40 * 200 + j * 200;// Assuming each rank writes 200 characters
-        MPI_File_write_at(file, offset, outputString, strlen(outputString), MPI_CHAR, MPI_STATUS_IGNORE);
+        offset = myrank * TEST_NUM_ROWS * 150 + j * 150;// Assuming each rank writes 150 characters
+        if (strlen(outputString) < 150) {
+            sprintf(outputString + strlen(outputString), "%*s", 150 - (int) strlen(outputString), " ");
+            outputString[strlen(outputString) - 2] = '\n';
+            outputString[strlen(outputString) - 1] = '\0';
+        }
+        MPI_File_write_at(file, offset, outputString, strlen(outputString)+ 1, MPI_CHAR, MPI_STATUS_IGNORE);
     }
     MPI_Barrier(MPI_COMM_WORLD);
     MPI_File_close(&file);
 
     MPI_Reduce(&correctCount, &global_correctCount, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
-    if(myrank == 0){printf("Success Rate Occlusion: %lf%%\n", 100 * (double) global_correctCount/40);}
+    if(myrank == 0){printf("Success Rate Occlusion: %lf%%\n", (100 * (double) global_correctCount/TEST_NUM_ROWS)/train_file_num);}
 
     if (myrank == 0) {
         double t2 = MPI_Wtime();

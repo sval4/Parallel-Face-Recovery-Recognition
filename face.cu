@@ -17,12 +17,12 @@ extern double *train_images;
 extern double* test_images;
 extern double* dist;
 
-extern "C" void createData(size_t length, size_t cols){
-    cudaMallocManaged( &occluded_image, ( 40 * cols * sizeof(double))); 
-    cudaMemset(occluded_image, 0, 40 * cols * sizeof(double));
+extern "C" void createData(size_t length, size_t cols, size_t test_length){
+    cudaMallocManaged( &occluded_image, ( test_length * cols * sizeof(double))); 
+    cudaMemset(occluded_image, 0, test_length * cols * sizeof(double));
 
-    cudaMallocManaged( &occluded_mask, ( 40 * cols * sizeof(int))); 
-    cudaMemset(occluded_mask, 0, 40 * cols * sizeof(int));
+    cudaMallocManaged( &occluded_mask, ( test_length * cols * sizeof(int))); 
+    cudaMemset(occluded_mask, 0, test_length * cols * sizeof(int));
 
     cudaMallocManaged( &dist, ( length * cols *sizeof(double))); 
     cudaMemset(dist, 0, length * cols *sizeof(double));
@@ -30,8 +30,8 @@ extern "C" void createData(size_t length, size_t cols){
     cudaMallocManaged( &train_images, ( length * cols * sizeof(double)));
     cudaMemset(train_images, 0, length * cols * sizeof(double));
 
-    cudaMallocManaged( &test_images, ( 40 * cols * sizeof(double))); 
-    cudaMemset(test_images, 0, 40 * cols * sizeof(double));
+    cudaMallocManaged( &test_images, ( test_length * cols * sizeof(double))); 
+    cudaMemset(test_images, 0, test_length * cols * sizeof(double));
 }
 
 __global__ void occludedKernel(double* data, double* test_images, int* occluded_mask, size_t rows, size_t cols) {
