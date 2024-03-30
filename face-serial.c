@@ -4,11 +4,15 @@
 #include <math.h>
 #include <float.h>
 #include <stdint.h>
+#include <time.h>
 
 #define MAX_LINE_LENGTH 1000000
-#define NUM_ROWS 360
 #define NUM_COLS 4096
 #define PATCH_SIZE 3 /* Patch size for neighborhood */
+
+size_t NUM_ROWS = 0;
+size_t TEST_NUM_ROWS = 0;
+size_t threads_per_block = 0;
 
 // // Function to perform image inpainting using Markov Random Fields
 // void recover_occluded_image(double* image, double* mask, double* recovered_image) {
@@ -153,21 +157,32 @@ int matchImage(double* images, double* refImage){
     return index;
 }
 
-int main() {
+int main(int argc, char *argv[]) {
     srand(123);
+    int train_file_num = atoi(argv[1]);
+    int test_file_num = atoi(argv[2]);
+    threads_per_block = atoi(argv[3]);
+    NUM_ROWS = 360 * train_file_num;
+    TEST_NUM_ROWS = 360 * test_file_num;
     FILE *file;
     char line[MAX_LINE_LENGTH];
     char *token;
     double* train_images = calloc(NUM_ROWS * NUM_COLS, sizeof(double));
-    double* test_images = calloc(40 * NUM_COLS, sizeof(double));
+    double* test_images = calloc(TEST_NUM_ROWS * NUM_COLS, sizeof(double));
     double* org_images = calloc(NUM_ROWS * NUM_COLS, sizeof(double));
     double* means = calloc(NUM_COLS, sizeof(double));
     int* train_labels = calloc(NUM_ROWS, sizeof(int));
-    int* test_labels = calloc(40, sizeof(int));
+    int* test_labels = calloc(TEST_NUM_ROWS, sizeof(int));
     int field_count;
+    char train_file[1000];
+    char test_file[1000];
+    clock_t start, end;
 
+    sprintf(train_file, "faces_train360x%d.csv", train_file_num);
+    sprintf(test_file, "faces_testx%d.csv", test_file_num);
+    start = clock();
     // Open the CSV file for reading
-    file = fopen("faces_train360.csv", "r");
+    file = fopen(train_file, "r");
     if (file == NULL) {
         perror("Error opening file");
         return 1;
@@ -209,7 +224,7 @@ int main() {
 
 //----------------------------------------------------------------------------------------------
     // Open the CSV file for reading
-    file = fopen("faces_test.csv", "r");
+    file = fopen(test_file, "r");
     if (file == NULL) {
         perror("Error opening file");
         return 1;
@@ -243,14 +258,14 @@ int main() {
     int i;
     int j;
     for(j=0; j < NUM_COLS; j++){
-        for(i = 0; i < 40; i++){
+        for(i = 0; i < TEST_NUM_ROWS; i++){
             test_images[i * NUM_COLS + j] = test_images[i * NUM_COLS + j] - means[j];
         }
     }
 //----------------------------------------------------------------------------------------------
     int correctCount = 0;
     file = fopen("match.txt", "w");
-    for(i = 0; i < 40; i++){
+    for(i = 0; i < TEST_NUM_ROWS; i++){
         double* ref_image = calloc(NUM_COLS, sizeof(double));
         for(j = i * NUM_COLS; j < i * NUM_COLS + NUM_COLS; j++){
             ref_image[j - (i * NUM_COLS)] = test_images[j];
@@ -267,7 +282,7 @@ int main() {
     }
     fclose(file);
 
-    printf("Success Rate: %lf%%\n", 100 * (double) correctCount/40);
+    printf("Success Rate: %lf%%\n", 100 * (double) correctCount/TEST_NUM_ROWS);
 
     FILE* pyFile = fopen("output.txt", "w");
     if (pyFile == NULL) {
@@ -278,7 +293,7 @@ int main() {
     file = fopen("occlusion_recovery.txt", "w");
     int index = 0;
     double* occluded_image = calloc(NUM_COLS, sizeof(double));
-    for(j = 0; j < 40; j++){
+    for(j = 0; j < TEST_NUM_ROWS; j++){
         int* occlusion_mask = calloc(NUM_COLS, sizeof(int));
         for(i =0; i < NUM_COLS; i++){
             occlusion_mask[i] = rand() % 2;
@@ -299,8 +314,12 @@ int main() {
     }
     fclose(file);
 
+    printf("Success Rate Occlusion: %lf%%\n", 100 * (double) correctCount/TEST_NUM_ROWS);
 
-    printf("Success Rate Occlusion: %lf%%\n", 100 * (double) correctCount/40);
+    end = clock();
+    double cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+    printf("Time is: %lf seconds\n", cpu_time_used);
 
     // Write each double to the file
     for(j = 0; j < NUM_COLS; j++){
@@ -309,7 +328,7 @@ int main() {
 
     fclose(pyFile);
 
-    system("python3 display.py");
+    // system("python3 display.py");
 
     free(train_images);
     free(test_images);

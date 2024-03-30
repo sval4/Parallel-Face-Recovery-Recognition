@@ -114,8 +114,6 @@ int matchImage(double* images, double* refImage, int rows_per_rank){
     return index;
 }
 
-//For now keep the train and test file argument as the same number
-//If too different, the calculated mean of the train will not be accurate enough
 int main(int argc, char *argv[]) {
     srand(123);
     int train_file_num = atoi(argv[1]);
