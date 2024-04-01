@@ -5,6 +5,7 @@
 #include <float.h>
 #include <stdint.h>
 #include <mpi.h>
+#include "clockcycle.h"
 
 #define MAX_LINE_LENGTH (4097 * 3 + 4096)
 #define NUM_COLS 4096
@@ -197,7 +198,7 @@ int main(int argc, char *argv[]) {
     MPI_File_close(&file);
     if (myrank == 0) {
         uint64_t t2 = clock_now();
-        printf("Input Cycle for Train is: %lf cycles\n", t2 - input_start_cycle);
+        printf("Input Cycle for Train is: %ld cycles\n", t2 - input_start_cycle);
         double t3 = MPI_Wtime();
         printf("Input Time for Train is: %lf seconds\n", t3 - input_start_time);
     }
@@ -249,7 +250,7 @@ int main(int argc, char *argv[]) {
     MPI_File_close(&file);
     if (myrank == 0) {
         uint64_t t2 = clock_now();
-        printf("Input Cycle for Test is: %lf cycles\n", t2 - input_start_cycle);
+        printf("Input Cycle for Test is: %ld cycles\n", t2 - input_start_cycle);
         double t3 = MPI_Wtime();
         printf("Input Time for Test is: %lf seconds\n", t3 - input_start_time);
     }
@@ -302,7 +303,7 @@ int main(int argc, char *argv[]) {
     MPI_File_close(&file);
     if (myrank == 0) {
         uint64_t t2 = clock_now();
-        printf("Output Cycle for Match is: %lf cycle\n", t2 - output_start_cycle);
+        printf("Output Cycle for Match is: %ld cycle\n", t2 - output_start_cycle);
         double t3 = MPI_Wtime();
         printf("Output Time for Match is: %lf seconds\n", t3 - output_start_time);
     }
@@ -357,7 +358,7 @@ int main(int argc, char *argv[]) {
     MPI_File_close(&file);
     if (myrank == 0) {
         uint64_t t2 = clock_now();
-        printf("Output Cycle for Occlusion_Recovery is: %lf cycle\n", t2 - output_start_cycle);
+        printf("Output Cycle for Occlusion_Recovery is: %ld cycle\n", t2 - output_start_cycle);
         double t3 = MPI_Wtime();
         printf("Output Time for Occlusion_Recovery is: %lf seconds\n", t3 - output_start_time);
     }
@@ -368,7 +369,7 @@ int main(int argc, char *argv[]) {
 
     if (myrank == 0) {
         uint64_t t2 = clock_now();
-        printf("Overall Cycle is: %lf cycle\n", t2 - overall_start_cycle);
+        printf("Overall Cycle is: %ld cycle\n", t2 - overall_start_cycle);
         double t3 = MPI_Wtime();
         printf("Overall Time is: %lf seconds\n", t3 - output_start_time);
     }
