@@ -5,6 +5,7 @@
 #include <float.h>
 #include <stdint.h>
 #include <mpi.h>
+#include "clockcycle.h"
 
 #define MAX_LINE_LENGTH (4097 * 3 + 4096)
 #define NUM_COLS 4096
@@ -100,7 +101,12 @@ int main(int argc, char *argv[]) {
     int myrank, numranks;
     MPI_File file;
     MPI_Status status;
-    double start_time = 0;
+    double overall_start_time = 0;
+    double input_start_time = 0;
+    double output_start_time = 0;
+    uint64_t overall_start_cycle = 0;
+    uint64_t input_start_cycle = 0;
+    uint64_t output_start_cycle = 0;
     char line[MAX_LINE_LENGTH + 2];
     char *token;
     double* org_images = calloc(NUM_ROWS * NUM_COLS, sizeof(double));
@@ -129,9 +135,14 @@ int main(int argc, char *argv[]) {
     MPI_Offset offset = start_row * (MAX_LINE_LENGTH + 2);
 
     if (myrank == 0) {
-        start_time = MPI_Wtime();
-    }
+        overall_start_cycle = clock_now();
+        input_start_cycle = overall_start_cycle;
+        output_start_cycle = overall_start_cycle;
 
+        overall_start_time = MPI_Wtime();
+        input_start_time = overall_start_time;
+        output_start_time = overall_start_time;
+    }
     MPI_File_open(MPI_COMM_WORLD, train_file, MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
     if (file == NULL) {
         perror("Error opening file");
@@ -161,6 +172,12 @@ int main(int argc, char *argv[]) {
 
 
     MPI_File_close(&file);
+    if (myrank == 0) {
+        uint64_t t2 = clock_now();
+        printf("Input Cycle for Train is: %lf cycles\n", t2 - input_start_cycle);
+        double t3 = MPI_Wtime();
+        printf("Input Time for Train is: %lf seconds\n", t3 - input_start_time);
+    }
     normalizeKernelLaunch(&train_images, rows_per_rank, NUM_COLS, threads_per_block);
     colMeans(train_images, means, rows_per_rank);
     meanCenterKernelLaunch(&train_images, means, rows_per_rank, NUM_COLS, threads_per_block);
@@ -179,7 +196,10 @@ int main(int argc, char *argv[]) {
 
     // +2 to handle the \r\n
     offset = test_start_row * (MAX_LINE_LENGTH + 2);
-
+    if (myrank == 0) {
+        input_start_cycle = clock_now();
+        input_start_time = MPI_Wtime();
+    }
     MPI_File_open(MPI_COMM_WORLD, test_file, MPI_MODE_RDONLY, MPI_INFO_NULL, &file);
     if (file == NULL) {
         perror("Error opening file");
@@ -204,12 +224,22 @@ int main(int argc, char *argv[]) {
         // if(myrank == 0){printf("Count: %d\n", field_count);}
     }
     MPI_File_close(&file);
+    if (myrank == 0) {
+        uint64_t t2 = clock_now();
+        printf("Input Cycle for Test is: %lf cycles\n", t2 - input_start_cycle);
+        double t3 = MPI_Wtime();
+        printf("Input Time for Test is: %lf seconds\n", t3 - input_start_time);
+    }
     normalizeKernelLaunch(&test_images, TEST_NUM_ROWS, NUM_COLS, threads_per_block);
     meanCenterKernelLaunch(&test_images, means, TEST_NUM_ROWS, NUM_COLS, threads_per_block);
     MPI_Allgather(test_images + (test_start_row * NUM_COLS), test_rows_per_rank * NUM_COLS, MPI_DOUBLE, test_images, test_rows_per_rank * NUM_COLS, MPI_DOUBLE, MPI_COMM_WORLD);
     MPI_Allgather(test_labels + test_start_row, test_rows_per_rank, MPI_INT, test_labels, test_rows_per_rank, MPI_INT, MPI_COMM_WORLD);
 
 //----------------------------------------------------------------------------------------------
+    if (myrank == 0) {
+        output_start_cycle = clock_now();
+        output_start_time = MPI_Wtime();
+    }
     MPI_File_open(MPI_COMM_WORLD, "match.txt", MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
     int correctCount = 0;
     for(i = 0; i < TEST_NUM_ROWS; i++){
@@ -243,11 +273,20 @@ int main(int argc, char *argv[]) {
     int global_correctCount;
     MPI_Reduce(&correctCount, &global_correctCount, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     if(myrank == 0){printf("Success Rate: %lf%%\n", (100 * (double) global_correctCount/TEST_NUM_ROWS)/train_file_num);}
-    MPI_Barrier(MPI_COMM_WORLD);
     MPI_File_close(&file);
+    if (myrank == 0) {
+        uint64_t t2 = clock_now();
+        printf("Output Cycle for Match is: %lf cycle\n", t2 - output_start_cycle);
+        double t3 = MPI_Wtime();
+        printf("Output Time for Match is: %lf seconds\n", t3 - output_start_time);
+    }
 
     correctCount = 0;
     int index = 0;
+    if (myrank == 0) {
+        output_start_cycle = clock_now();
+        output_start_time = MPI_Wtime();
+    }
     MPI_File_open(MPI_COMM_WORLD, "occlusion_recovery.txt", MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
     for(j = 0; j < TEST_NUM_ROWS; j++){
         if(myrank == 0 && j == 0){
@@ -280,15 +319,22 @@ int main(int argc, char *argv[]) {
         }
         MPI_File_write_at(file, offset, outputString, strlen(outputString)+ 1, MPI_CHAR, MPI_STATUS_IGNORE);
     }
-    MPI_Barrier(MPI_COMM_WORLD);
     MPI_File_close(&file);
+    if (myrank == 0) {
+        uint64_t t2 = clock_now();
+        printf("Output Cycle for Occlusion_Recovery is: %lf cycle\n", t2 - output_start_cycle);
+        double t3 = MPI_Wtime();
+        printf("Output Time for Occlusion_Recovery is: %lf seconds\n", t3 - output_start_time);
+    }
 
     MPI_Reduce(&correctCount, &global_correctCount, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     if(myrank == 0){printf("Success Rate Occlusion: %lf%%\n", (100 * (double) global_correctCount/TEST_NUM_ROWS)/train_file_num);}
 
     if (myrank == 0) {
-        double t2 = MPI_Wtime();
-        printf("Time is: %lf seconds\n", t2 - start_time);
+        uint64_t t2 = clock_now();
+        printf("Overall Cycle is: %lf cycle\n", t2 - overall_start_cycle);
+        double t3 = MPI_Wtime();
+        printf("Overall Time is: %lf seconds\n", t3 - output_start_time);
     }
 
     // if(myrank == 0){system("python3 display.py");}

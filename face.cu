@@ -145,7 +145,7 @@ extern "C" void meanCenterKernelLaunch(double** data, double* means, size_t rows
     cudaDeviceSynchronize();
 }
 
-
+// Not using shared memory because of critical section needing mutexes
 __global__ void norm2Kernel(double* images, double* test, size_t rows, size_t cols, size_t start_test, double* answer){
     size_t index;
     for(index = blockIdx.x * blockDim.x + threadIdx.x; index < rows; index += blockDim.x * gridDim.x) {
