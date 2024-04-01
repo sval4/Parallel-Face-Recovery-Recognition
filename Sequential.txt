@@ -42,3 +42,13 @@ Output Time for Occlusion_Recovery is: 567.784130 seconds
 Overall Cycle is: 292399222325 cycle
 Overall Time is: 570.921170 seconds
 ------------------------------------------------------------------------
+Input Cycle for Train is: 1717876152 cycles
+Input Time for Train is: 3.325628 seconds
+Input Cycle for Test is: 1162733311 cycles
+Input Time for Test is: 2.231072 seconds
+Output Cycle for Match is: 578985446896 cycle
+Output Time for Match is: 1130.824359 seconds
+Output Cycle for Occlusion_Recovery is: 1159329308313 cycle
+Output Time for Occlusion_Recovery is: 2264.301142 seconds
+Overall Cycle is: 1162663387450 cycle
+Overall Time is: 2270.743474 seconds
