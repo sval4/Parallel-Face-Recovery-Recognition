@@ -5,6 +5,7 @@
 #include <float.h>
 #include <stdint.h>
 #include <time.h>
+#include "clockcycle.h"
 
 #define MAX_LINE_LENGTH 1000000
 #define NUM_COLS 4096
@@ -176,11 +177,22 @@ int main(int argc, char *argv[]) {
     int field_count;
     char train_file[1000];
     char test_file[1000];
-    clock_t start, end;
+    clock_t overall_start_time = 0;
+    clock_t input_start_time = 0;
+    clock_t output_start_time = 0;
+    uint64_t overall_start_cycle = 0;
+    uint64_t input_start_cycle = 0;
+    uint64_t output_start_cycle = 0;
 
     sprintf(train_file, "faces_train360x%d.csv", train_file_num);
     sprintf(test_file, "faces_testx%d.csv", test_file_num);
-    start = clock();
+    overall_start_cycle = clock_now();
+    input_start_cycle = overall_start_cycle;
+    output_start_cycle = overall_start_cycle;
+
+    overall_start_time = clock();
+    input_start_time = overall_start_time;
+    output_start_time = overall_start_time;
     // Open the CSV file for reading
     file = fopen(train_file, "r");
     if (file == NULL) {
@@ -214,6 +226,10 @@ int main(int argc, char *argv[]) {
     }
     // Close the file
     fclose(file);
+    uint64_t t2 = clock_now();
+    printf("Input Cycle for Train is: %ld cycles\n", t2 - input_start_cycle);
+    clock_t t3 = clock();
+    printf("Input Time for Train is: %lf seconds\n", (double) (t3 - input_start_time)/CLOCKS_PER_SEC);
 
     colMeans(train_images, means);
     // for(int i = 0; i < NUM_COLS; i++){
@@ -224,6 +240,8 @@ int main(int argc, char *argv[]) {
 
 //----------------------------------------------------------------------------------------------
     // Open the CSV file for reading
+    input_start_cycle = clock_now();
+    input_start_time = clock();
     file = fopen(test_file, "r");
     if (file == NULL) {
         perror("Error opening file");
@@ -255,6 +273,10 @@ int main(int argc, char *argv[]) {
     }
     // Close the file
     fclose(file);
+    t2 = clock_now();
+    printf("Input Cycle for Test is: %ld cycles\n", t2 - input_start_cycle);
+    t3 = clock();
+    printf("Input Time for Test is: %lf seconds\n", (double) (t3 - input_start_time)/CLOCKS_PER_SEC);
     int i;
     int j;
     for(j=0; j < NUM_COLS; j++){
@@ -264,6 +286,8 @@ int main(int argc, char *argv[]) {
     }
 //----------------------------------------------------------------------------------------------
     int correctCount = 0;
+    output_start_cycle = clock_now();
+    output_start_time = clock();
     file = fopen("match.txt", "w");
     for(i = 0; i < TEST_NUM_ROWS; i++){
         double* ref_image = calloc(NUM_COLS, sizeof(double));
@@ -281,7 +305,10 @@ int main(int argc, char *argv[]) {
         free(ref_image);
     }
     fclose(file);
-
+    t2 = clock_now();
+    printf("Output Cycle for Match is: %ld cycle\n", t2 - output_start_cycle);
+    t3 = clock();
+    printf("Output Time for Match is: %lf seconds\n", (double) (t3 - output_start_time)/CLOCKS_PER_SEC);
     printf("Success Rate: %lf%%\n", 100 * (double) correctCount/TEST_NUM_ROWS);
 
     FILE* pyFile = fopen("output.txt", "w");
@@ -313,13 +340,16 @@ int main(int argc, char *argv[]) {
         free(occlusion_mask);
     }
     fclose(file);
-
+    t2 = clock_now();
+    printf("Output Cycle for Occlusion_Recovery is: %ld cycle\n", t2 - output_start_cycle);
+    t3 = clock();
+    printf("Output Time for Occlusion_Recovery is: %lf seconds\n", (double) (t3 - output_start_time)/CLOCKS_PER_SEC);
     printf("Success Rate Occlusion: %lf%%\n", 100 * (double) correctCount/TEST_NUM_ROWS);
 
-    end = clock();
-    double cpu_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
-
-    printf("Time is: %lf seconds\n", cpu_time_used);
+    t2 = clock_now();
+    printf("Overall Cycle is: %ld cycle\n", t2 - overall_start_cycle);
+    t3 = clock();
+    printf("Overall Time is: %lf seconds\n", (double) (t3 - overall_start_time)/CLOCKS_PER_SEC);
 
     // Write each double to the file
     for(j = 0; j < NUM_COLS; j++){

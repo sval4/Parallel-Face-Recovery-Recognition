@@ -164,3 +164,11 @@ extern "C" void norm2KernelLaunch(double** data, double* test, size_t rows, size
     norm2Kernel<<<gridSize, blockSize>>>(*data, test, rows, cols, start, *answer);
     cudaDeviceSynchronize();
 }
+
+extern "C" void freeData(){
+    cudaFree(occluded_image);
+    cudaFree(occluded_mask);
+    cudaFree(train_images);
+    cudaFree(test_images);
+    cudaFree(dist);
+}

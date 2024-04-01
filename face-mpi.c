@@ -308,11 +308,7 @@ int main(int argc, char *argv[]) {
         printf("Output Time for Match is: %lf seconds\n", t3 - output_start_time);
     }
 
-    FILE* pyFile = fopen("output.txt", "w");
-    if (pyFile == NULL) {
-        perror("Error opening file");
-        return 1;
-    }
+
     correctCount = 0;
     int index = 0;
     if (myrank == 0) {
@@ -371,20 +367,8 @@ int main(int argc, char *argv[]) {
         uint64_t t2 = clock_now();
         printf("Overall Cycle is: %ld cycle\n", t2 - overall_start_cycle);
         double t3 = MPI_Wtime();
-        printf("Overall Time is: %lf seconds\n", t3 - output_start_time);
+        printf("Overall Time is: %lf seconds\n", t3 - overall_start_time);
     }
-
-    if(myrank == 0){
-        // Write each double to the file
-        for(j = 0; j < NUM_COLS; j++){
-            fprintf(pyFile, "%lf\n", org_images[NUM_COLS + j]);
-        }
-    }
-
-
-    fclose(pyFile);
-
-    // if(myrank == 0){system("python3 display.py");}
 
     free(train_images);
     free(test_images);

@@ -26,6 +26,7 @@ extern void createMask(int** data, size_t rows, size_t cols, size_t threadsCount
 extern void normalizeKernelLaunch(double** data, size_t rows, size_t cols, size_t threadsCount);
 extern void meanCenterKernelLaunch(double** data, double* means, size_t rows, size_t cols, size_t threadsCount);
 extern void norm2KernelLaunch(double** data, double* test, size_t rows, size_t cols, size_t start, size_t threadsCount, double** answer);
+extern void freeData();
 
 void colMeans(double* images, double* means, int rows_per_rank){
     int i, j;
@@ -334,13 +335,10 @@ int main(int argc, char *argv[]) {
         uint64_t t2 = clock_now();
         printf("Overall Cycle is: %ld cycle\n", t2 - overall_start_cycle);
         double t3 = MPI_Wtime();
-        printf("Overall Time is: %lf seconds\n", t3 - output_start_time);
+        printf("Overall Time is: %lf seconds\n", t3 - overall_start_time);
     }
 
-    // if(myrank == 0){system("python3 display.py");}
-
-    // free(train_images);
-    // free(test_images);
+    freeData();
     free(org_images);
     free(means);
     free(train_labels);

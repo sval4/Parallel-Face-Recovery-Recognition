@@ -1,0 +1,44 @@
+Input Cycle for Train is: 125178546 cycles
+Input Time for Train is: 0.208139 seconds
+Input Cycle for Test is: 91638584 cycles
+Input Time for Test is: 0.139432 seconds
+Output Cycle for Match is: 2271788925 cycle
+Output Time for Match is: 4.434848 seconds
+Output Cycle for Occlusion_Recovery is: 4621358929 cycle
+Output Time for Occlusion_Recovery is: 9.021585 seconds
+Overall Cycle is: 4858104177 cycle
+Overall Time is: 9.408033 seconds
+------------------------------------------------------------------------
+Input Cycle for Train is: 265576465 cycles
+Input Time for Train is: 0.424075 seconds
+Input Cycle for Test is: 175203699 cycles
+Input Time for Test is: 0.276983 seconds
+Output Cycle for Match is: 9091660547 cycle
+Output Time for Match is: 17.756024 seconds
+Output Cycle for Occlusion_Recovery is: 18360692487 cycle
+Output Time for Occlusion_Recovery is: 35.858856 seconds
+Overall Cycle is: 18841231875 cycle
+Overall Time is: 36.637524 seconds
+------------------------------------------------------------------------
+Input Cycle for Train is: 455296833 cycles
+Input Time for Train is: 0.829277 seconds
+Input Cycle for Test is: 314666055 cycles
+Input Time for Test is: 0.554007 seconds
+Output Cycle for Match is: 36362066315 cycle
+Output Time for Match is: 71.011663 seconds
+Output Cycle for Occlusion_Recovery is: 72907450428 cycle
+Output Time for Occlusion_Recovery is: 142.373176 seconds
+Overall Cycle is: 73769366083 cycle
+Overall Time is: 143.936009 seconds
+------------------------------------------------------------------------
+Input Cycle for Train is: 880319705 cycles
+Input Time for Train is: 1.661654 seconds
+Input Cycle for Test is: 598982505 cycles
+Input Time for Test is: 1.108311 seconds
+Output Cycle for Match is: 144983571042 cycle
+Output Time for Match is: 283.144698 seconds
+Output Cycle for Occlusion_Recovery is: 290731951575 cycle
+Output Time for Occlusion_Recovery is: 567.784130 seconds
+Overall Cycle is: 292399222325 cycle
+Overall Time is: 570.921170 seconds
+------------------------------------------------------------------------
