@@ -273,7 +273,13 @@ int main(int argc, char *argv[]) {
     }
     int global_correctCount;
     MPI_Reduce(&correctCount, &global_correctCount, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
-    if(myrank == 0){printf("Success Rate: %lf%%\n", (100 * (double) global_correctCount/TEST_NUM_ROWS)/train_file_num);}
+    if(myrank == 0){
+        int value = numranks;
+        if(value > train_file_num){
+            value = train_file_num;
+        }
+        printf("Success Rate: %lf%%\n", (100 * (double) global_correctCount/TEST_NUM_ROWS)/value);
+    }
     MPI_File_close(&file);
     if (myrank == 0) {
         uint64_t t2 = clock_now();
@@ -329,7 +335,13 @@ int main(int argc, char *argv[]) {
     }
 
     MPI_Reduce(&correctCount, &global_correctCount, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
-    if(myrank == 0){printf("Success Rate Occlusion: %lf%%\n", (100 * (double) global_correctCount/TEST_NUM_ROWS)/train_file_num);}
+    if(myrank == 0){
+        int value = numranks;
+        if(value > train_file_num){
+            value = train_file_num;
+        }
+        printf("Success Rate Occlusion: %lf%%\n", (100 * (double) global_correctCount/TEST_NUM_ROWS)/value);
+    }
 
     if (myrank == 0) {
         uint64_t t2 = clock_now();
