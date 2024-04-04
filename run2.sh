@@ -6,5 +6,5 @@
 #SBATCH --mail-user=vals@rpi.edu
 #SBATCH --mail-type=ALL
 module load xl_r spectrum-mpi cuda/11.2
-mpicc -g face-mpi.c -lm
-mpirun -np 1 ./a.out 16 16 1
+make -f run.mk
+mpirun --bind-to core --report-bindings -np 1 face-exe 16 16 1

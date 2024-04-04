@@ -30,7 +30,7 @@ send "1\r"
 
 sudo umount ~/mounts/home
 Sv2019384756@22
-sshfs cci02:/gpfs/u/scratch/PCPE/PCPEvlsh ~/mounts/home -o follow_symlinks
+sshfs cci01:/gpfs/u/scratch/PCPE/PCPEvlsh ~/mounts/home -o follow_symlinks
 Sv201789@
 cp face.c ~/mounts/home
 cp face.cu ~/mounts/home

@@ -1,0 +1,68 @@
+- Blocksize 512 - 1549417
+- Blocksize 1024 - 1549418
+
+Input Cycle for Train is: 1493535483 cycles
+Input Time for Train is: 2.916936 seconds
+Input Cycle for Test is: 916494895 cycles
+Input Time for Test is: 1.789956 seconds
+Success Rate: 95.000000%
+Output Cycle for Match is: 519607361512 cycle
+Output Time for Match is: 1014.809558 seconds
+Output Cycle for Occlusion_Recovery is: 555762847945 cycle
+Output Time for Occlusion_Recovery is: 1085.422369 seconds
+Success Rate Occlusion: 93.315972%
+Overall Cycle is: 1078081731569 cycle
+Overall Time is: 2105.527596 seconds
+------------------------------------------------------------------------
+Input Cycle for Train is: 1495858685 cycles
+Input Time for Train is: 2.921477 seconds
+Input Cycle for Test is: 916784916 cycles
+Input Time for Test is: 1.790523 seconds
+Success Rate: 95.000000%
+Output Cycle for Match is: 519783783439 cycle
+Output Time for Match is: 1015.154040 seconds
+Output Cycle for Occlusion_Recovery is: 530843753807 cycle
+Output Time for Occlusion_Recovery is: 1036.754566 seconds
+Success Rate Occlusion: 93.315972%
+Overall Cycle is: 1053254517394 cycle
+Overall Time is: 2057.039158 seconds
+------------------------------------------------------------------------
+Input Cycle for Train is: 1498040870 cycles
+Input Time for Train is: 2.925741 seconds
+Input Cycle for Test is: 917385726 cycles
+Input Time for Test is: 1.791699 seconds
+Success Rate: 95.000000%
+Output Cycle for Match is: 518375224564 cycle
+Output Time for Match is: 1012.403097 seconds
+Output Cycle for Occlusion_Recovery is: 528280799095 cycle
+Output Time for Occlusion_Recovery is: 1031.748989 seconds
+Success Rate Occlusion: 93.315972%
+Overall Cycle is: 1049278857689 cycle
+Overall Time is: 2049.274543 seconds
+------------------------------------------------------------------------
+Input Cycle for Train is: 1495057358 cycles
+Input Time for Train is: 2.919910 seconds
+Input Cycle for Test is: 917309679 cycles
+Input Time for Test is: 1.791551 seconds
+Success Rate: 95.000000%
+Output Cycle for Match is: 518654314780 cycle
+Output Time for Match is: 1012.948215 seconds
+Output Cycle for Occlusion_Recovery is: 529046136444 cycle
+Output Time for Occlusion_Recovery is: 1033.243785 seconds
+Success Rate Occlusion: 93.315972%
+Overall Cycle is: 1050314606369 cycle
+Overall Time is: 2051.297509 seconds
+------------------------------------------------------------------------
+Input Cycle for Train is: 1494843664 cycles
+Input Time for Train is: 2.919494 seconds
+Input Cycle for Test is: 918936082 cycles
+Input Time for Test is: 1.794726 seconds
+Success Rate: 95.000000%
+Output Cycle for Match is: 518161193675 cycle
+Output Time for Match is: 1011.985025 seconds
+Output Cycle for Occlusion_Recovery is: 531029111964 cycle
+Output Time for Occlusion_Recovery is: 1037.116627 seconds
+Success Rate Occlusion: 93.315972%
+Overall Cycle is: 1051792343044 cycle
+Overall Time is: 2054.183493 seconds
+------------------------------------------------------------------------
