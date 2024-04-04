@@ -17,12 +17,13 @@ sbatch --mail-type=ALL --mail-user=vals@rpi.edu ./script.sh
 
 
 
-salloc -N 1 --partition=el8-rpi --gres=gpu:2 -t 30
+salloc -N 1 --partition=el8-rpi --gres=gpu:1 -t 30
 
 make -f run.mk
 
 module load xl_r spectrum-mpi cuda/11.2
-mpirun --bind-to core --report-bindings -np 2 ./face-exe 1 1 256
+mpirun --bind-to core --report-bindings -np 1 ./face-exe 16 16 128
+mpirun -np 1 ./face-exe 1 1 1
 
 # 35,298,625,909.000000
 # 148,666,483,417.000000

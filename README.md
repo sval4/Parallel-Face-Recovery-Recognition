@@ -15,18 +15,18 @@ Parallel Implementation of Nearest Neighbor (image match) algorithm and linear i
 - Ranks 8
 - Ranks 12
 - Ranks 24
-- Ranks 36 - Need 2 nodes still need to run this
+- Ranks 36
 
 ### Strong Scaling Study 2 (Train 16, Test 16, Rank 1, 1 GPU):
-- Blocksize 1
-- Blocksize 8
-- Blocksize 16
-- Blocksize 32
-- Blocksize 128
-- Blocksize 512
-- Blocksize 1024
+- Blocksize 1 - 
+- Blocksize 8 - 
+- Blocksize 16 - 
+- Blocksize 32 - 
+- Blocksize 128 - 
+- Blocksize 512 - 
+- Blocksize 1024 - 
 
-### Strong Scaling Study 3 (Train 16, Test 16, 1 GPU):
+### Strong Scaling Study 3 (Train 16, Test 16, 4 GPU):
 - Ranks 1, Blocksize 1
 - Ranks 2, Blocksize 8
 - Ranks 4, Blocksize 16

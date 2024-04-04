@@ -14,6 +14,8 @@ extern int* occluded_mask;
 
 extern double *train_images;
 
+extern double *d_means;
+
 extern double* test_images;
 extern double* dist;
 
@@ -27,6 +29,9 @@ extern "C" void createData(size_t length, size_t cols, size_t test_length){
     cudaMallocManaged( &dist, ( length * cols *sizeof(double))); 
     cudaMemset(dist, 0, length * cols *sizeof(double));
 
+    cudaMallocManaged( &d_means, ( cols *sizeof(double))); 
+    cudaMemset(d_means, 0, cols *sizeof(double));
+
     cudaMallocManaged( &train_images, ( length * cols * sizeof(double)));
     cudaMemset(train_images, 0, length * cols * sizeof(double));
 
@@ -34,36 +39,41 @@ extern "C" void createData(size_t length, size_t cols, size_t test_length){
     cudaMemset(test_images, 0, test_length * cols * sizeof(double));
 }
 
-__global__ void occludedKernel(double* data, double* test_images, int* occluded_mask, size_t rows, size_t cols) {
+__global__ void occludedKernel(double* data, double* test_images, int* occluded_mask_arg, size_t rows, size_t cols) {
+    extern __shared__ int shared_mask[];
+    for (int i = threadIdx.x; i < rows * cols; i += blockDim.x) {
+        shared_mask[i] = occluded_mask_arg[i];
+    }
+    __syncthreads();
     for(size_t idx = blockIdx.x * blockDim.x + threadIdx.x; idx < cols * rows; idx += blockDim.x * gridDim.x) {
         size_t start = idx / cols;
         start *= cols;
         int width = sqrt((float) cols);
-        if(occluded_mask[idx] == 1){
+        if(occluded_mask_arg[idx] == 1){
             int left = idx - 1;
-            while(left >= start && left % width != (width - 1) && occluded_mask[left] == 1) left--;
+            while(left >= start && left % width != (width - 1) && occluded_mask_arg[left] == 1) left--;
             int right = idx + 1;
-            while(right < start + width && right % width != 0 && occluded_mask[right] == 1) right++;
+            while(right < start + width && right % width != 0 && occluded_mask_arg[right] == 1) right++;
             int top = idx - width;
-            while(top >= start && occluded_mask[top] == 1) top-= width;
+            while(top >= start && occluded_mask_arg[top] == 1) top-= width;
             int bottom = idx + width;
-            while(bottom < start + cols && occluded_mask[bottom] == 1) bottom+= width;
+            while(bottom < start + cols && occluded_mask_arg[bottom] == 1) bottom+= width;
 
             double interpolated_value = 0.0;
             int count = 0;
-            if(left >= 0 && occluded_mask[left] == 0){
+            if(left >= start && occluded_mask_arg[left] == 0){
                 interpolated_value += test_images[left];
                 count++;
             }
-            if(right < cols && occluded_mask[right] == 0){
+            if(right < cols && occluded_mask_arg[right] == 0){
                 interpolated_value += test_images[right];
                 count++;
             }
-            if(top >= 0 && occluded_mask[top] == 0){
+            if(top >= start && occluded_mask_arg[top] == 0){
                 interpolated_value += test_images[top];
                 count++;
             }
-            if(bottom < cols && occluded_mask[bottom] == 0){
+            if(bottom < cols && occluded_mask_arg[bottom] == 0){
                 interpolated_value += test_images[bottom];
                 count++;
             }
@@ -76,10 +86,11 @@ __global__ void occludedKernel(double* data, double* test_images, int* occluded_
     }
 }
 
-extern "C" void occludedKernelLaunch(double** data, double* test_images, size_t rows, size_t cols, size_t threadsCount){
+extern "C" void occludedKernelLaunch(double** data, double** test_images, int** occluded_mask_arg, size_t rows, size_t cols, size_t threadsCount){
     size_t blockSize = threadsCount;
     size_t gridSize = (((rows * cols) + blockSize - 1) / blockSize);
-    occludedKernel<<<gridSize, blockSize>>>(*data, test_images, occluded_mask, rows, cols);
+    cudaMemcpy(occluded_mask, *occluded_mask_arg, rows*cols*sizeof(int), cudaMemcpyHostToDevice);
+    occludedKernel<<<gridSize, blockSize>>>(*data, *test_images, occluded_mask, rows, cols);
     cudaDeviceSynchronize();
 }
 
@@ -88,7 +99,7 @@ __global__ void createMaskKernel(int* data, size_t rows, size_t cols){
     for(size_t idx = blockIdx.x * blockDim.x + threadIdx.x; idx < cols * rows; idx += blockDim.x * gridDim.x) {
         curandState state;
         curand_init(123, idx, 0, &state);
-        //Performance varies slightly because of random number generation
+        //Performance might vary slightly because of random number generation
         data[idx] = (curand_uniform(&state) < 0.5) ? 0 : 1;
     }
 }
@@ -100,9 +111,6 @@ extern "C" void createMask(int** data, size_t rows, size_t cols, size_t threadsC
     cudaDeviceSynchronize();
 }
 
-extern "C" void copyToCPUOccluded(double* data, size_t length, int start){
-    cudaMemcpy(data, occluded_image + (start * length), length * sizeof(double), cudaMemcpyDeviceToHost);
-}
 
 __global__ void normalizeKernel(double* data, size_t rows, size_t cols){
     for(size_t row_idx = blockIdx.x * blockDim.x + threadIdx.x; row_idx < rows; row_idx += blockDim.x * gridDim.x) {
@@ -138,10 +146,11 @@ __global__ void meanCenterKernel(double* data, double* means, size_t rows, size_
 }
 
 
-extern "C" void meanCenterKernelLaunch(double** data, double* means, size_t rows, size_t cols, size_t threadsCount){
+extern "C" void meanCenterKernelLaunch(double** data, double** means, size_t rows, size_t cols, size_t threadsCount){
     size_t blockSize = threadsCount;
     size_t gridSize = (((rows * cols) + blockSize - 1) / blockSize);
-    meanCenterKernel<<<gridSize, blockSize>>>(*data, means, rows, cols);
+    cudaMemcpy(d_means, *means, cols*sizeof(double), cudaMemcpyHostToDevice);
+    meanCenterKernel<<<gridSize, blockSize>>>(*data, d_means, rows, cols);
     cudaDeviceSynchronize();
 }
 
@@ -171,4 +180,5 @@ extern "C" void freeData(){
     cudaFree(train_images);
     cudaFree(test_images);
     cudaFree(dist);
+    cudaFree(d_means);
 }
