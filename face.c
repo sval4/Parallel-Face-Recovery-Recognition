@@ -20,11 +20,11 @@ size_t threads_per_block = 0;
 size_t NUM_ROWS = 0;
 size_t TEST_NUM_ROWS = 0;
 
-extern void occludedKernelLaunch(double** data, double** test_images, int** occluded_mask_arg, size_t rows, size_t cols, size_t threadsCount);
+extern void occludedKernelLaunch(double** data, double* test_images, int* occluded_mask_arg, size_t rows, size_t cols, size_t threadsCount);
 extern void createData(size_t length, size_t cols, size_t test_length);
 extern void createMask(int** data, size_t rows, size_t cols, size_t threadsCount);
 extern void normalizeKernelLaunch(double** data, size_t rows, size_t cols, size_t threadsCount);
-extern void meanCenterKernelLaunch(double** data, double** means, size_t rows, size_t cols, size_t threadsCount);
+extern void meanCenterKernelLaunch(double** data, double* means, size_t rows, size_t cols, size_t threadsCount);
 extern void norm2KernelLaunch(double** data, double* test, size_t rows, size_t cols, size_t start, size_t threadsCount, double** answer);
 extern void freeData();
 
@@ -181,7 +181,7 @@ int main(int argc, char *argv[]) {
     }
     normalizeKernelLaunch(&train_images, rows_per_rank, NUM_COLS, threads_per_block);
     colMeans(train_images, means, rows_per_rank);
-    meanCenterKernelLaunch(&train_images, &means, rows_per_rank, NUM_COLS, threads_per_block);
+    meanCenterKernelLaunch(&train_images, means, rows_per_rank, NUM_COLS, threads_per_block);
     if(myrank == 1){
         // for(i = 0; i < NUM_COLS; i++){
         //     printf("Mean[%d]: %lf\n",i, means[i]);
@@ -232,7 +232,7 @@ int main(int argc, char *argv[]) {
         printf("Input Time for Test is: %lf seconds\n", t3 - input_start_time);
     }
     normalizeKernelLaunch(&test_images, TEST_NUM_ROWS, NUM_COLS, threads_per_block);
-    meanCenterKernelLaunch(&test_images, &means, TEST_NUM_ROWS, NUM_COLS, threads_per_block);
+    meanCenterKernelLaunch(&test_images, means, TEST_NUM_ROWS, NUM_COLS, threads_per_block);
     MPI_Allgather(test_images + (test_start_row * NUM_COLS), test_rows_per_rank * NUM_COLS, MPI_DOUBLE, test_images, test_rows_per_rank * NUM_COLS, MPI_DOUBLE, MPI_COMM_WORLD);
     MPI_Allgather(test_labels + test_start_row, test_rows_per_rank, MPI_INT, test_labels, test_rows_per_rank, MPI_INT, MPI_COMM_WORLD);
 
@@ -298,7 +298,15 @@ int main(int argc, char *argv[]) {
     for(j = 0; j < TEST_NUM_ROWS; j++){
         if(myrank == 0 && j == 0){
             createMask(&occluded_mask, TEST_NUM_ROWS, NUM_COLS, threads_per_block);
-            occludedKernelLaunch(&occluded_image, &test_images, &occluded_mask, TEST_NUM_ROWS, NUM_COLS, threads_per_block);
+            occludedKernelLaunch(&occluded_image, test_images, occluded_mask, TEST_NUM_ROWS, NUM_COLS, threads_per_block);
+            // int count = 0;
+            // for(int k = 0; k < TEST_NUM_ROWS * NUM_COLS; k++){
+            //     printf("%lf\n", occluded_image[k]);
+            //     if(occluded_image[k] == 0.0){
+            //         count++;
+            //     }
+            // }
+            // printf("Count: %d\n", count);
         }
         if(j == 0){
             MPI_Bcast(occluded_image, TEST_NUM_ROWS * NUM_COLS, MPI_DOUBLE, 0, MPI_COMM_WORLD);
