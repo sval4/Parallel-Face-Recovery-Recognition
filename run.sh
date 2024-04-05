@@ -11,5 +11,5 @@ while IFS= read -r line
 do
         echo "$line slots=18"
 done < hostfile > temp && mv temp hostfile
-mpicc -g face-mpi.c -lm
-mpirun -hostfile hostfile a.out 16 16 1
+make -f run.mk
+mpirun -hostfile hostfile face-exe 16 16 1024

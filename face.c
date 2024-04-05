@@ -298,6 +298,13 @@ int main(int argc, char *argv[]) {
     for(j = 0; j < TEST_NUM_ROWS; j++){
         if(myrank == 0 && j == 0){
             createMask(&occluded_mask, TEST_NUM_ROWS, NUM_COLS, threads_per_block);
+            // int count = 0;
+            // for(int k = 0; k < TEST_NUM_ROWS * NUM_COLS; k++){
+            //     if(occluded_mask[k] == 1){
+            //         count++;
+            //     }
+            // }
+            // printf("Count: %d\n", count);
             occludedKernelLaunch(&occluded_image, test_images, occluded_mask, TEST_NUM_ROWS, NUM_COLS, threads_per_block);
             // int count = 0;
             // for(int k = 0; k < TEST_NUM_ROWS * NUM_COLS; k++){

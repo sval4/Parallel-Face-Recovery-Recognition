@@ -106,11 +106,11 @@ __global__ void occludedKernel(double* data, double* test_images, int* occluded_
 
             double interpolated_value = 0.0;
             int count = 0;
-            if(left >= start && occluded_mask_arg[left] == 0){
+            if(left >= start && && left % width != (width - 1) && occluded_mask_arg[left] == 0){
                 interpolated_value += test_images[left];
                 count++;
             }
-            if(right < start + cols && occluded_mask_arg[right] == 0){
+            if(right < start + width && && right % width != 0 && occluded_mask_arg[right] == 0){
                 interpolated_value += test_images[right];
                 count++;
             }
@@ -143,7 +143,7 @@ __global__ void createMaskKernel(int* data, size_t rows, size_t cols){
     for(size_t idx = blockIdx.x * blockDim.x + threadIdx.x; idx < cols * rows; idx += blockDim.x * gridDim.x) {
         curandState state;
         curand_init(123, idx, 0, &state);
-        //Performance might vary slightly because of random number generation
+        //Performance won't vary, if same test size is used
         data[idx] = (curand_uniform(&state) < 0.5) ? 0 : 1;
     }
 }
