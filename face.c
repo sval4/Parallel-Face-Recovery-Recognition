@@ -20,9 +20,9 @@ size_t threads_per_block = 0;
 size_t NUM_ROWS = 0;
 size_t TEST_NUM_ROWS = 0;
 
-extern void occludedKernelLaunch(double** data, double* test_images, int* occluded_mask_arg, size_t rows, size_t cols, size_t threadsCount);
+extern void occludedKernelLaunch(double** data, double* test_images, int* occluded_mask_arg, size_t start, size_t rows, size_t cols, size_t threadsCount);
 extern void createData(size_t length, size_t cols, size_t test_length);
-extern void createMask(int** data, size_t rows, size_t cols, size_t threadsCount);
+extern void createMask(int** data, size_t start, size_t rows, size_t cols, size_t threadsCount);
 extern void normalizeKernelLaunch(double** data, size_t rows, size_t cols, size_t threadsCount);
 extern void meanCenterKernelLaunch(double** data, double* means, size_t rows, size_t cols, size_t threadsCount);
 extern void norm2KernelLaunch(double** data, double* test, size_t rows, size_t cols, size_t start, size_t threadsCount, double** answer);
@@ -296,8 +296,8 @@ int main(int argc, char *argv[]) {
     }
     MPI_File_open(MPI_COMM_WORLD, "occlusion_recovery.txt", MPI_MODE_CREATE | MPI_MODE_WRONLY, MPI_INFO_NULL, &file);
     for(j = 0; j < TEST_NUM_ROWS; j++){
-        if(myrank == 0 && j == 0){
-            createMask(&occluded_mask, TEST_NUM_ROWS, NUM_COLS, threads_per_block);
+        if(j == 0){
+            createMask(&occluded_mask, myrank * TEST_NUM_ROWS / numranks, TEST_NUM_ROWS / numranks, NUM_COLS, threads_per_block);
             // int count = 0;
             // for(int k = 0; k < TEST_NUM_ROWS * NUM_COLS; k++){
             //     if(occluded_mask[k] == 1){
@@ -305,18 +305,18 @@ int main(int argc, char *argv[]) {
             //     }
             // }
             // printf("Count: %d\n", count);
-            occludedKernelLaunch(&occluded_image, test_images, occluded_mask, TEST_NUM_ROWS, NUM_COLS, threads_per_block);
-            // int count = 0;
-            // for(int k = 0; k < TEST_NUM_ROWS * NUM_COLS; k++){
-            //     printf("%lf\n", occluded_image[k]);
-            //     if(occluded_image[k] == 0.0){
-            //         count++;
+            occludedKernelLaunch(&occluded_image, test_images, occluded_mask, myrank * TEST_NUM_ROWS / numranks, TEST_NUM_ROWS/numranks, NUM_COLS, threads_per_block);
+            MPI_Allgather(occluded_image + (myrank * TEST_NUM_ROWS / numranks * NUM_COLS), TEST_NUM_ROWS / numranks * NUM_COLS, MPI_DOUBLE, occluded_image, TEST_NUM_ROWS / numranks * NUM_COLS, MPI_DOUBLE, MPI_COMM_WORLD);
+            // if(myrank == 0){
+            //     int count = 0;
+            //     for(int k = 0; k < TEST_NUM_ROWS * NUM_COLS; k++){
+            //         printf("%lf\n", occluded_image[k]);
+            //         if(occluded_image[k] == 0.0){
+            //             count++;
+            //         }
             //     }
+            //     printf("Count: %d\n", count);
             // }
-            // printf("Count: %d\n", count);
-        }
-        if(j == 0){
-            MPI_Bcast(occluded_image, TEST_NUM_ROWS * NUM_COLS, MPI_DOUBLE, 0, MPI_COMM_WORLD);
         }
         index = matchImage(train_images, occluded_image, rows_per_rank, j*NUM_COLS);
 

@@ -89,8 +89,9 @@ extern "C" void createData(size_t length, size_t cols, size_t test_length){
 //     }
 // }
 
-__global__ void occludedKernel(double* data, double* test_images, int* occluded_mask_arg, size_t rows, size_t cols) {
-    for(size_t idx = blockIdx.x * blockDim.x + threadIdx.x; idx < cols * rows; idx += blockDim.x * gridDim.x) {
+__global__ void occludedKernel(double* data, double* test_images, int* occluded_mask_arg, size_t start_row, size_t rows, size_t cols) {
+    for(size_t index = blockIdx.x * blockDim.x + threadIdx.x; index < cols * rows; index += blockDim.x * gridDim.x) {
+        size_t idx = index + start_row * cols;
         size_t start = (int) idx / cols;
         start *= cols;
         int width = sqrt((float) cols);
@@ -106,11 +107,11 @@ __global__ void occludedKernel(double* data, double* test_images, int* occluded_
 
             double interpolated_value = 0.0;
             int count = 0;
-            if(left >= start && && left % width != (width - 1) && occluded_mask_arg[left] == 0){
+            if(left >= start && left % width != (width - 1) && occluded_mask_arg[left] == 0){
                 interpolated_value += test_images[left];
                 count++;
             }
-            if(right < start + width && && right % width != 0 && occluded_mask_arg[right] == 0){
+            if(right < start + width && right % width != 0 && occluded_mask_arg[right] == 0){
                 interpolated_value += test_images[right];
                 count++;
             }
@@ -131,16 +132,17 @@ __global__ void occludedKernel(double* data, double* test_images, int* occluded_
     }
 }
 
-extern "C" void occludedKernelLaunch(double** data, double* test_images, int* occluded_mask_arg, size_t rows, size_t cols, size_t threadsCount){
+extern "C" void occludedKernelLaunch(double** data, double* test_images, int* occluded_mask_arg, size_t start, size_t rows, size_t cols, size_t threadsCount){
     size_t blockSize = threadsCount;
     size_t gridSize = (((rows * cols) + blockSize - 1) / blockSize);
-    occludedKernel<<<gridSize, blockSize>>>(*data, test_images, occluded_mask_arg, rows, cols);
+    occludedKernel<<<gridSize, blockSize>>>(*data, test_images, occluded_mask_arg, start, rows, cols);
     cudaDeviceSynchronize();
 }
 
 
-__global__ void createMaskKernel(int* data, size_t rows, size_t cols){
-    for(size_t idx = blockIdx.x * blockDim.x + threadIdx.x; idx < cols * rows; idx += blockDim.x * gridDim.x) {
+__global__ void createMaskKernel(int* data, size_t start, size_t rows, size_t cols){
+    for(size_t index = blockIdx.x * blockDim.x + threadIdx.x; index < cols * rows; index += blockDim.x * gridDim.x) {
+        size_t idx = index + start * cols;
         curandState state;
         curand_init(123, idx, 0, &state);
         //Performance won't vary, if same test size is used
@@ -148,10 +150,10 @@ __global__ void createMaskKernel(int* data, size_t rows, size_t cols){
     }
 }
 
-extern "C" void createMask(int** data, size_t rows, size_t cols, size_t threadsCount){
+extern "C" void createMask(int** data, size_t start, size_t rows, size_t cols, size_t threadsCount){
     size_t blockSize = threadsCount;
     size_t gridSize = (((rows * cols) + blockSize - 1) / blockSize);
-    createMaskKernel<<<gridSize, blockSize>>>(*data, rows, cols);
+    createMaskKernel<<<gridSize, blockSize>>>(*data, start, rows, cols);
     cudaDeviceSynchronize();
 }
 
