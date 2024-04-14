@@ -83,6 +83,6 @@ Output Cycle for Match is: 28097733914 cycle
 Output Time for Match is: 54.876166 seconds
 Output Cycle for Occlusion_Recovery is: 37788838087 cycle
 Output Time for Occlusion_Recovery is: 73.803348 seconds
-Success Rate Occlusion: 68.923611%
+Success Rate Occlusion: 93.072917%
 Overall Cycle is: 66616472441 cycle
 Overall Time is: 130.105017 seconds
