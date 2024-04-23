@@ -5,7 +5,7 @@
 #include <float.h>
 #include <stdint.h>
 #include <time.h>
-#include "clockcycle.h"
+// #include "clockcycle.h"
 
 #define MAX_LINE_LENGTH 1000000
 #define NUM_COLS 4096
@@ -186,7 +186,7 @@ int main(int argc, char *argv[]) {
 
     sprintf(train_file, "faces_train360x%d.csv", train_file_num);
     sprintf(test_file, "faces_testx%d.csv", test_file_num);
-    overall_start_cycle = clock_now();
+    overall_start_cycle = 101;
     input_start_cycle = overall_start_cycle;
     output_start_cycle = overall_start_cycle;
 
@@ -226,7 +226,7 @@ int main(int argc, char *argv[]) {
     }
     // Close the file
     fclose(file);
-    uint64_t t2 = clock_now();
+    uint64_t t2 = 101;
     printf("Input Cycle for Train is: %ld cycles\n", t2 - input_start_cycle);
     clock_t t3 = clock();
     printf("Input Time for Train is: %lf seconds\n", (double) (t3 - input_start_time)/CLOCKS_PER_SEC);
@@ -240,7 +240,7 @@ int main(int argc, char *argv[]) {
 
 //----------------------------------------------------------------------------------------------
     // Open the CSV file for reading
-    input_start_cycle = clock_now();
+    input_start_cycle = 101;
     input_start_time = clock();
     file = fopen(test_file, "r");
     if (file == NULL) {
@@ -273,7 +273,7 @@ int main(int argc, char *argv[]) {
     }
     // Close the file
     fclose(file);
-    t2 = clock_now();
+    t2 = 101;
     printf("Input Cycle for Test is: %ld cycles\n", t2 - input_start_cycle);
     t3 = clock();
     printf("Input Time for Test is: %lf seconds\n", (double) (t3 - input_start_time)/CLOCKS_PER_SEC);
@@ -286,7 +286,7 @@ int main(int argc, char *argv[]) {
     }
 //----------------------------------------------------------------------------------------------
     int correctCount = 0;
-    output_start_cycle = clock_now();
+    output_start_cycle = 101;
     output_start_time = clock();
     file = fopen("match.txt", "w");
     for(i = 0; i < TEST_NUM_ROWS; i++){
@@ -305,7 +305,7 @@ int main(int argc, char *argv[]) {
         free(ref_image);
     }
     fclose(file);
-    t2 = clock_now();
+    t2 = 101;
     printf("Output Cycle for Match is: %ld cycle\n", t2 - output_start_cycle);
     t3 = clock();
     printf("Output Time for Match is: %lf seconds\n", (double) (t3 - output_start_time)/CLOCKS_PER_SEC);
@@ -320,8 +320,11 @@ int main(int argc, char *argv[]) {
     file = fopen("occlusion_recovery.txt", "w");
     int index = 0;
     double* occluded_image = calloc(NUM_COLS, sizeof(double));
-    for(j = 0; j < TEST_NUM_ROWS; j++){
-        int* occlusion_mask = calloc(NUM_COLS, sizeof(int));
+    int* occlusion_mask;
+    //  - 232
+    int num_image_print = TEST_NUM_ROWS;
+    for(j = 0; j < num_image_print; j++){
+        occlusion_mask = calloc(NUM_COLS, sizeof(int));
         for(i =0; i < NUM_COLS; i++){
             occlusion_mask[i] = rand() % 2;
         }
@@ -337,28 +340,42 @@ int main(int argc, char *argv[]) {
         }else{
             fprintf(file, "Train-Image: %d, Test-Image: %d, Predicted-Label: %d, Correct-Label: %d, Wrong\n", index, j, train_labels[index], test_labels[j]);
         }
-        free(occlusion_mask);
+        // free(occlusion_mask);
     }
     fclose(file);
-    t2 = clock_now();
+    t2 = 101;
     printf("Output Cycle for Occlusion_Recovery is: %ld cycle\n", t2 - output_start_cycle);
     t3 = clock();
     printf("Output Time for Occlusion_Recovery is: %lf seconds\n", (double) (t3 - output_start_time)/CLOCKS_PER_SEC);
     printf("Success Rate Occlusion: %lf%%\n", 100 * (double) correctCount/TEST_NUM_ROWS);
 
-    t2 = clock_now();
+    t2 = 101;
     printf("Overall Cycle is: %ld cycle\n", t2 - overall_start_cycle);
     t3 = clock();
     printf("Overall Time is: %lf seconds\n", (double) (t3 - overall_start_time)/CLOCKS_PER_SEC);
 
     // Write each double to the file
+    // for(j = 0; j < NUM_COLS; j++){
+    //     fprintf(pyFile, "%lf\n", occluded_image[j]);
+    // }
+    // for(j = 0; j < NUM_COLS; j++){
+    //     if(occlusion_mask[j] == 1){
+    //         //fprintf(pyFile, "%lf\n", 0.0);
+    //         fprintf(pyFile, "%lf\n", test_images[(num_image_print - 1) * NUM_COLS + j]);
+    //     }else{
+    //         fprintf(pyFile, "%lf\n", test_images[(num_image_print - 1) * NUM_COLS + j]);
+    //     }
+    // }
+    // for(j = 0; j < NUM_COLS; j++){
+    //     fprintf(pyFile, "%lf\n", train_images[index * NUM_COLS + j]);
+    // }
     for(j = 0; j < NUM_COLS; j++){
-        fprintf(pyFile, "%lf\n", occluded_image[j]);
+        fprintf(pyFile, "%lf\n", org_images[index * NUM_COLS + j]);
     }
 
     fclose(pyFile);
 
-    // system("python3 display.py");
+    system("python3 display.py");
 
     free(train_images);
     free(test_images);

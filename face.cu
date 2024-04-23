@@ -39,56 +39,6 @@ extern "C" void createData(size_t length, size_t cols, size_t test_length){
     cudaMemset(test_images, 0, test_length * cols * sizeof(double));
 }
 
-// __global__ void occludedKernel(double* data, double* test_images, int* occluded_mask_arg, size_t rows, size_t cols) {
-//     extern __shared__ int shared_mask[];
-//     size_t i = threadIdx.x;
-//     for (; i < cols; i += blockDim.x) {
-//         shared_mask[i] = occluded_mask_arg[blockIdx.x * blockDim.x + i];
-//     }
-//     __syncthreads();
-//     size_t start = (blockIdx.x * blockDim.x + threadIdx.x) / cols;
-//     for(size_t idx = threadIdx.x; idx < cols; idx += blockDim.x) {
-//         start *= cols;
-//         int width = sqrt((float) cols);
-//         if(shared_mask[idx] == 1){
-//             int left = idx - 1;
-//             while(left > 0 && left % width != (width - 1) && shared_mask[left] == 1) left--;
-//             int right = idx + 1;
-//             while(right < cols - 1 && right % width != 0 && shared_mask[right] == 1) right++;
-//             int top = idx - width;
-//             while(top > 0 && shared_mask[top] == 1) top-= width;
-//             int bottom = idx + width;
-//             while(bottom < cols - 1 && shared_mask[bottom] == 1) bottom+= width;
-
-//             double interpolated_value = 0.0;
-//             int count = 0;
-//             if(left >= 0 && shared_mask[left] == 0){
-//                 interpolated_value += test_images[blockIdx.x * blockDim.x + left];
-//                 count++;
-//             }
-//             if(right < cols && shared_mask[right] == 0){
-//                 interpolated_value += test_images[blockIdx.x * blockDim.x + right];
-//                 count++;
-//             }
-//             if(top >= 0 && shared_mask[top] == 0){
-//                 interpolated_value += test_images[blockIdx.x * blockDim.x + top];
-//                 count++;
-//             }
-//             if(bottom < cols && shared_mask[bottom] == 0){
-//                 interpolated_value += test_images[blockIdx.x * blockDim.x + bottom];
-//                 count++;
-//             }
-//             if(count > 0){
-//                 data[blockIdx.x * blockDim.x + idx] = interpolated_value / count;
-//                 data[0] = 12;
-//             }
-//         }else{
-//             data[blockIdx.x * blockDim.x + idx] = test_images[blockIdx.x * blockDim.x + idx];
-//             data[0] = 11;
-//         }
-//     }
-// }
-
 __global__ void occludedKernel(double* data, double* test_images, int* occluded_mask_arg, size_t start_row, size_t rows, size_t cols) {
     for(size_t index = blockIdx.x * blockDim.x + threadIdx.x; index < cols * rows; index += blockDim.x * gridDim.x) {
         size_t idx = index + start_row * cols;
@@ -197,26 +147,6 @@ extern "C" void meanCenterKernelLaunch(double** data, double* means, size_t rows
     size_t gridSize = (((rows * cols) + blockSize - 1) / blockSize);
     // cudaMemcpy(d_means, *means, cols*sizeof(double), cudaMemcpyHostToDevice);
     meanCenterKernel<<<gridSize, blockSize>>>(*data, means, rows, cols);
-    cudaDeviceSynchronize();
-}
-
-// Not using shared memory because of critical section needing mutexes
-__global__ void norm2Kernel(double* images, double* test, size_t rows, size_t cols, size_t start_test, double* answer){
-    size_t index;
-    for(index = blockIdx.x * blockDim.x + threadIdx.x; index < rows; index += blockDim.x * gridDim.x) {
-        double sum = 0.0;
-        size_t start = index * cols;
-        for(int i = start; i < cols + start; i++){
-            sum += (images[i] - test[start_test + i - start]) * (images[i] - test[start_test + i - start]);
-        }
-        answer[index] = sqrt(sum);
-    }
-}
-
-extern "C" void norm2KernelLaunch(double** data, double* test, size_t rows, size_t cols, size_t start, size_t threadsCount, double** answer){
-    size_t blockSize = threadsCount;
-    size_t gridSize = (((rows * cols) + blockSize - 1) / blockSize);
-    norm2Kernel<<<gridSize, blockSize>>>(*data, test, rows, cols, start, *answer);
     cudaDeviceSynchronize();
 }
 

@@ -1,5 +1,16 @@
 # Parallel-Face-Recovery-Recognition
 Parallel Implementation of Nearest Neighbor (image match) algorithm and linear interpolation (occlusion recovery) algorithm; using MPI and CUDA.
+## How to Run (Ensure access to CUDA and MPI):
+- mpixlc -g face.c -c -o face-mpi.o
+- nvcc -g -G face.cu -c -o face-cuda.o 
+- mpicc -g face-mpi.o face-cuda.o -o face-exe -L/usr/local/cuda-11.2/lib64/ -lcudadevrt -lcudart -lstdc++ -lm
+- mpirun --bind-to core --report-bindings -np 1 face-exe 1 1 1024
+
+The first argument chooses which training file for input (1 indicates training file with 1*360 images)
+
+The second argument chooses which testing file for input (1 indicates training file with 1*360 images)
+
+The third argument chooses number of threads per block for CUDA
 ## Test Cases:
 ### Sequential:
 - Train 1, Test 1

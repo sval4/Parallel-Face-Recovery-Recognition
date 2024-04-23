@@ -7,6 +7,18 @@
 #include <mpi.h>
 #include "clockcycle.h"
 
+// ## How to Run (Ensure access to CUDA and MPI):
+// - mpixlc -g face.c -c -o face-mpi.o
+// - nvcc -g -G face.cu -c -o face-cuda.o 
+// - mpicc -g face-mpi.o face-cuda.o -o face-exe -L/usr/local/cuda-11.2/lib64/ -lcudadevrt -lcudart -lstdc++ -lm
+// - mpirun --bind-to core --report-bindings -np 1 face-exe 1 1 1024
+
+// The first argument chooses which training file for input (1 indicates training file with 1*360 images)
+
+// The second argument chooses which testing file for input (1 indicates training file with 1*360 images)
+
+// The third argument chooses number of threads per block for CUDA
+
 #define MAX_LINE_LENGTH (4097 * 3 + 4096)
 #define NUM_COLS 4096
 
@@ -25,7 +37,6 @@ extern void createData(size_t length, size_t cols, size_t test_length);
 extern void createMask(int** data, size_t start, size_t rows, size_t cols, size_t threadsCount);
 extern void normalizeKernelLaunch(double** data, size_t rows, size_t cols, size_t threadsCount);
 extern void meanCenterKernelLaunch(double** data, double* means, size_t rows, size_t cols, size_t threadsCount);
-extern void norm2KernelLaunch(double** data, double* test, size_t rows, size_t cols, size_t start, size_t threadsCount, double** answer);
 extern void freeData();
 
 void colMeans(double* images, double* means, int rows_per_rank){
@@ -50,28 +61,6 @@ double norm2(double* images, int start, double* refImage, int start_occ){
     return sqrt(sum);
 }
 
-//CUDA version, but it might be slower
-// int matchImage(double* images, double* refImage, int rows_per_rank, int start){
-//     int i;
-//     double minDist = DBL_MAX;
-//     int index = 0;
-//     norm2KernelLaunch(&images, refImage, rows_per_rank, NUM_COLS, start, threads_per_block, &dist);
-//     for(i = 0; i < rows_per_rank; i++){
-//         if(minDist > dist[i]){
-//             minDist = dist[i];
-//             index = i;
-//         }
-//     }
-//     double global_minDist;
-//     MPI_Allreduce(&minDist, &global_minDist, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
-//     // if(myrank == 0){printf("GlobMinDist:%lf\n", global_minDist);}
-//     if (minDist > global_minDist) {
-//         index = -1;
-//     }
-//     return index;
-// }
-
-
 int matchImage(double* images, double* refImage, int rows_per_rank, int start){
     int i;
     double minDist = DBL_MAX;
@@ -85,7 +74,6 @@ int matchImage(double* images, double* refImage, int rows_per_rank, int start){
     }
     double global_minDist;
     MPI_Allreduce(&minDist, &global_minDist, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
-    // if(myrank == 0){printf("GlobMinDist:%lf\n", global_minDist);}
     if (minDist > global_minDist) {
         index = -1;
     }
@@ -158,7 +146,6 @@ int main(int argc, char *argv[]) {
         line[MAX_LINE_LENGTH + 1] = '\0'; // Null-terminate the string
         char* token = strtok(line, ",");
         train_labels[i] = atoi(token);
-        // if(myrank == 0){printf("train Label: %d\n",train_labels[i] );}
         int count = 0;
         token = strtok(NULL, ",");
         int field_count = 0;
@@ -168,7 +155,6 @@ int main(int argc, char *argv[]) {
             token = strtok(NULL, ",");
             field_count++;
         }
-        // if(myrank == 0){printf("Count: %d\n", field_count);}
     }
 
 
@@ -182,15 +168,8 @@ int main(int argc, char *argv[]) {
     normalizeKernelLaunch(&train_images, rows_per_rank, NUM_COLS, threads_per_block);
     colMeans(train_images, means, rows_per_rank);
     meanCenterKernelLaunch(&train_images, means, rows_per_rank, NUM_COLS, threads_per_block);
-    if(myrank == 1){
-        // for(i = 0; i < NUM_COLS; i++){
-        //     printf("Mean[%d]: %lf\n",i, means[i]);
-        // }
-    }
 
-
-
-// //----------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------
     //Number TEST_NUM_ROWS is always the number of images in test dataset
     int test_rows_per_rank = TEST_NUM_ROWS / numranks;
     int test_start_row = myrank * test_rows_per_rank;
@@ -213,7 +192,6 @@ int main(int argc, char *argv[]) {
         line[MAX_LINE_LENGTH + 1] = '\0'; // Null-terminate the string
         char* token = strtok(line, ",");
         test_labels[i] = atoi(token);
-        // if(myrank == 1){printf("test Label: %d\n",test_labels[i]);}
         int count = 0;
         token = strtok(NULL, ",");
         int field_count = 0;
@@ -222,7 +200,6 @@ int main(int argc, char *argv[]) {
             token = strtok(NULL, ",");
             field_count++;
         }
-        // if(myrank == 0){printf("Count: %d\n", field_count);}
     }
     MPI_File_close(&file);
     if (myrank == 0) {
@@ -274,6 +251,7 @@ int main(int argc, char *argv[]) {
     int global_correctCount;
     MPI_Reduce(&correctCount, &global_correctCount, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     if(myrank == 0){
+        // Necessary because we have duplicate images in the training data
         int value = numranks;
         if(value > train_file_num){
             value = train_file_num;
@@ -298,25 +276,8 @@ int main(int argc, char *argv[]) {
     for(j = 0; j < TEST_NUM_ROWS; j++){
         if(j == 0){
             createMask(&occluded_mask, myrank * TEST_NUM_ROWS / numranks, TEST_NUM_ROWS / numranks, NUM_COLS, threads_per_block);
-            // int count = 0;
-            // for(int k = 0; k < TEST_NUM_ROWS * NUM_COLS; k++){
-            //     if(occluded_mask[k] == 1){
-            //         count++;
-            //     }
-            // }
-            // printf("Count: %d\n", count);
             occludedKernelLaunch(&occluded_image, test_images, occluded_mask, myrank * TEST_NUM_ROWS / numranks, TEST_NUM_ROWS/numranks, NUM_COLS, threads_per_block);
             MPI_Allgather(occluded_image + (myrank * TEST_NUM_ROWS / numranks * NUM_COLS), TEST_NUM_ROWS / numranks * NUM_COLS, MPI_DOUBLE, occluded_image, TEST_NUM_ROWS / numranks * NUM_COLS, MPI_DOUBLE, MPI_COMM_WORLD);
-            // if(myrank == 0){
-            //     int count = 0;
-            //     for(int k = 0; k < TEST_NUM_ROWS * NUM_COLS; k++){
-            //         printf("%lf\n", occluded_image[k]);
-            //         if(occluded_image[k] == 0.0){
-            //             count++;
-            //         }
-            //     }
-            //     printf("Count: %d\n", count);
-            // }
         }
         index = matchImage(train_images, occluded_image, rows_per_rank, j*NUM_COLS);
 
@@ -350,6 +311,7 @@ int main(int argc, char *argv[]) {
 
     MPI_Reduce(&correctCount, &global_correctCount, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     if(myrank == 0){
+        // Necessary because we have duplicate images in the training data
         int value = numranks;
         if(value > train_file_num){
             value = train_file_num;
