@@ -7,6 +7,16 @@
 #include <time.h>
 // #include "clockcycle.h"
 
+// ## How to Run:
+// gcc face-serial.c -lm
+// ./a.out 1 1 1
+
+// The first argument chooses which training file for input (1 indicates training file with 1*360 images)
+
+// The second argument chooses which testing file for input (1 indicates training file with 1*360 images)
+
+// The third argument chooses number of threads per block for CUDA, for this it can be any number because it is not used
+
 #define MAX_LINE_LENGTH 1000000
 #define NUM_COLS 4096
 #define PATCH_SIZE 3 /* Patch size for neighborhood */
